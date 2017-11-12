@@ -126,7 +126,7 @@ process trimomatic {
 	script:
 	lead   = params.leading > 0 ? "LEADING:${params.leading}" : ""
 	trail  = params.trailing > 0 ? "TRAILING:${params.trailing}" : ""
-	slide  = (params.slidingCutoff > 0 && params.slidingSize > 0) ? "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" 
+	slide  = (params.slidingCutoff > 0 && params.slidingSize > 0) ? "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" : ""
 	minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
 	"""
 	trimmomatic PE -threads ${params.cpus} \
