@@ -120,7 +120,7 @@ process trimomatic {
 
 	output:
 	set val(name), file(reads), file("*_R{1,2}.trim.fq.gz") into reads_fastqc
-	file "*fq.gz" into trimmed_reads
+	file "*trim.fq.gz" into trimmed_reads
 	file "*trimmomatic.log" into trimgalore_results, trimgalore_logs
 
 	script:
@@ -133,21 +133,20 @@ process trimomatic {
 	$reads \
 	${name}_R1.trim.fq.gz ${name}_R1.unpair.trim.fq.gz \
 	${name}_R2.trim.fq.gz ${name}_R2.unpair.trim.fq.gz \
-	$lead $trail $slide $minlen 2> trimmomatic.log
+	$lead $trail $slide $minlen 2> ${name}.trimmomatic.log
 	"""
 }
 
 // Step 2. FastQC
 process fastqc {
 	publishDir "${params.outdir}/fastqc", mode: "copy",
-		saveAs: { filename -> filename.indexOf(".zip") > 0 ? zips/$filename : "$filename" }
+		saveAs: { filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename" }
 
 	input:
 	set val(name), file(reads), file(trimmed) from reads_fastqc
 
 	output:
 	file "*_fastqc.{zip,html}" into fastqc_results
-	file ".command.out" into fastqc_stdout
 
 	script:
 	"""
@@ -165,8 +164,7 @@ process multiqc {
 
     output:
     file "*multiqc_report.html" into multiqc_report
-    file "*_data"
-    file ".command.err" into multiqc_stderr
+    file "*_data" into multiqc_data
 
     script:
     """
