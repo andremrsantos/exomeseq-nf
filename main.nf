@@ -111,7 +111,7 @@ Channel
 process trimomatic {
 	publishDir "${params.outdir}/trimomatic", mode: "copy",
 		saveAs: { filename -> 
-			if (filename.indexOf("trimming.log") > 0) "logs/$filename"
+			if (filename.indexOf("trimmomatic.log") > 0) "logs/$filename"
 			else filename
 		}
 
@@ -121,7 +121,7 @@ process trimomatic {
 	output:
 	set val(name), file(reads), file("*_R{1,2}.trim.fq.gz") into reads_fastqc
 	file "*fq.gz" into trimmed_reads
-	file "*trimming.log" into trimgalore_results, trimgalore_logs
+	file "*trimmomatic.log" into trimgalore_results, trimgalore_logs
 
 	script:
 	lead   = params.leading > 0 ? "LEADING:${params.leading}" : ""
@@ -130,11 +130,10 @@ process trimomatic {
 	minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
 	"""
 	trimmomatic PE -threads ${params.cpus} \
-	-trimlog trimming.log \
 	$reads \
 	${name}_R1.trim.fq.gz ${name}_R1.unpair.trim.fq.gz \
 	${name}_R2.trim.fq.gz ${name}_R2.unpair.trim.fq.gz \
-	$lead $trail $slide $minlen
+	$lead $trail $slide $minlen 2> trimmomatic.log
 	"""
 }
 
