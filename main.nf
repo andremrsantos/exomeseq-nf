@@ -106,9 +106,7 @@ log.info summary.collect { k,v -> "${k.padRight(15)}: $v" }.join("\n")
 log.info "====================================="
 
 // Generate reads pairs
-genome = Channel
-  .fromPath(params.genome)
-  .ifEmpty { exit 1, "BWA index not found: ${params.bwa_index}" }
+genome = file(params.genome)
 reads_trimming = Channel
   .fromFilePairs( params.reads, size: 2)
   .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}.\n" }
