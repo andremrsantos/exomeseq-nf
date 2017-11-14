@@ -199,7 +199,7 @@ process samtools_flagstat {
     publishDir "${params.outdir}/alignment/stats", mode: 'copy'
 
     input:
-    file bam from aligned_reads
+    file bam from aligned_mkd_reads
 
     output:
     file "${bam.baseName}_flagstat.txt" into flagstat_results
