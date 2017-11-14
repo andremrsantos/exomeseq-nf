@@ -113,10 +113,10 @@ Channel
 
 // Step 1. TrimGalore
 process trimomatic {
-  publishDir "${params.outdir}/trimomatic", mode: "copy",
+  publishDir "${params.outdir}/trimmomatic", mode: "copy",
     saveAs: { filename -> 
       if (filename.indexOf("trimmomatic.log") > 0) "logs/$filename"
-      else filename }
+      else if (filename.indexOf("trim.fq.gz") > 0) filename }
 
   input:
   set val(name), file(reads) from reads_trimming
