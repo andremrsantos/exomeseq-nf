@@ -106,14 +106,17 @@ log.info summary.collect { k,v -> "${k.padRight(15)}: $v" }.join("\n")
 log.info "====================================="
 
 // Generate reads pairs
-Channel
+genome = Channel
+  .fromPath(params.genome)
+  .ifEmpty { exit 1, "BWA index not found: ${params.bwa_index}" }
+reads_trimming = Channel
   .fromFilePairs( params.reads, size: 2)
   .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}.\n" }
-  .set { reads_trimming }
 
 // Step 1. TrimGalore
 process trimomatic {
   publishDir "${params.outdir}/trimmomatic", mode: "copy",
+    overwrite: false,
     saveAs: { filename -> 
       if (filename.indexOf("trimmomatic.log") > 0) "logs/$filename"
       else if (filename.indexOf("trim.fq.gz") > 0) filename }
@@ -123,7 +126,7 @@ process trimomatic {
 
   output:
   set val(name), file(reads), file("*_R{1,2}.trim.fq.gz") into reads_fastqc
-  file "*trim.fq.gz" into trimmed_reads
+  set val(name), file("*trim.fq.gz") into trimmed_reads
   file "*trimmomatic.log" into trimgalore_results, trimgalore_logs
 
   script:
@@ -142,7 +145,7 @@ process trimomatic {
 
 // Step 2. FastQC
 process fastqc {
-  publishDir "${params.outdir}/fastqc", mode: "copy",
+  publishDir "${params.outdir}/fastqc", mode: "copy"
     saveAs: { filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename" }
 
   input:
@@ -157,6 +160,45 @@ process fastqc {
   """
 }
 
+// Step 3.1 BWA Align
+process bwamem {
+  publishDir: "${params.outdir}/alignment", mode: "copy", overwrite: false
+
+  input:
+  set val(name), file(reads) from trimmed_reads
+
+  output:
+  file "*.bam" into aligned_reads
+
+  script:
+  """
+  bwa mem -M -t ${params.cpus} \
+    -R \"@RG\tID:${name}\tSM:${name}\tPL:illumina\" \
+    ${genome} ${reads} | \
+    sambamba view -S -f bam /dev/stdin | \
+    sambamba sort -o /dev/stdout /dev/stdin | \
+    sambamba markdup /dev/stdin ${name}.bam
+  """
+}
+
+// Step 3.2 Samtools Flagstat and Stat
+process samtools_flagstat {
+    publishDir "${params.outdir}/alignment/stats", mode: 'copy'
+
+    input:
+    file bam from aligned_reads
+
+    output:
+    file "${bam.baseName}_flagstat.txt" into flagstat_results
+    file "${bam.baseName}_stats.txt" into samtools_stats_results
+
+    script:
+    """
+    samtools flagstat $bam > ${bam.baseName}_flagstat.txt
+    samtools stats $bam > ${bam.baseName}_stats.txt
+    """
+}
+
 // Step X. MultiQC
 process multiqc {
   publishDir "${params.outdir}/MultiQC", mode: 'copy'
@@ -165,6 +207,8 @@ process multiqc {
   file multiqc_config
   file (fastqc:'fastqc/*') from fastqc_results.collect()
   file ('trimgalore/*') from trimgalore_results.collect()
+  file ('flagstat') from flagstat_results
+  file ('stats') from samtools_stats_results
 
   output:
   file "*multiqc_report.html" into multiqc_report
