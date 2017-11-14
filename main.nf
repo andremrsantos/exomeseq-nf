@@ -162,7 +162,7 @@ process fastqc {
 
 // Step 3.1 BWA Align
 process bwamem {
-  publishDir: "${params.outdir}/alignment", mode: "copy", overwrite: false
+  publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
 
   input:
   set val(name), file(reads) from trimmed_reads
