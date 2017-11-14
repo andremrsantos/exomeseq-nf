@@ -50,16 +50,16 @@ def helpMessage() {
     --reads                       Path to input data (must be surrounded with quotes).
     --genome                      Genome reference fasta path
   Trimming options
-    --length [int]                Discard reads that became shorter than length [int] because of either quality or adapter trimming. Default: 18
-    --leading [int]               Instructs Trim Galore to remove bp from the 5' end of read 1 (or single-end reads)
-    --trailing [int]              Instructs Trim Galore to remove bp from the 5' end of read 2 (paired-end reads only)
-    --slidingSize [int]           Instructs Trim Galore to remove bp from the 3' end of read 1 AFTER adapter/quality trimming has been performed
-    --slidingCutoff [int]         Instructs Trim Galore to re move bp from the 3' end of read 2 AFTER adapter/quality trimming has been performed
+    --length             [36/int] Discard reads that became shorter than length [int] because of either quality or adapter trimming. Default: 18
+    --leading            [10/int] Instructs Trim Galore to remove bp from the 5' end of read 1 (or single-end reads)
+    --trailing           [10/int] Instructs Trim Galore to remove bp from the 5' end of read 2 (paired-end reads only)
+    --slidingSize         [5/int] Instructs Trim Galore to remove bp from the 3' end of read 1 AFTER adapter/quality trimming has been performed
+    --slidingCutoff      [15/int] Instructs Trim Galore to re move bp from the 3' end of read 2 AFTER adapter/quality trimming has been performed
   Other options:
     --help                        Print this help text
     --outdir                      The output directory where the results will be saved
-    --cpus                        The number of cpus to reserve for multithread jobs
-    --memory                      The memory size to researve
+    --cpus                [4/int] The number of cpus to reserve for multithread jobs
+    --memory            ["10 GB"] The memory size to researve
     --time                        The maximum execution time
   """.stripIndent()
 }
