@@ -23,7 +23,7 @@ TODO: pipeline overview
 3.1. Bowtie 1 alignment against miRBase mature miRNA
 3.2. Post-alignment processing of miRBase mature miRNA counts
 3.3. edgeR analysis on miRBase mature miRNA counts
-	- TMM normalization and a table of top expression mature miRNA
+  - TMM normalization and a table of top expression mature miRNA
     - MDS plot clustering samples
     - Heatmap of sample similarities
 4.1. Bowtie 1 alignment against miRBase hairpin for the unaligned reads in step 3
@@ -39,29 +39,29 @@ TODO: pipeline overview
 */
 
 def helpMessage() {
-    log.info"""
-    =========================================
-    Exome-Seq: Best Practice v${version}
-    =========================================
-    Usage:
-    The typical command for running the pipeline is as follows:
-    nextflow run lghm/ExomeSeq --reads '*.fastq.gz' --genome /data/rsc/b37/human_g1k_v37.fasta
-    Mandatory arguments:
-      --reads                       Path to input data (must be surrounded with quotes).
-      --genome                      Genome reference fasta path
-    Trimming options
-      --length [int]                Discard reads that became shorter than length [int] because of either quality or adapter trimming. Default: 18
-      --leading [int]               Instructs Trim Galore to remove bp from the 5' end of read 1 (or single-end reads)
-      --trailing [int]              Instructs Trim Galore to remove bp from the 5' end of read 2 (paired-end reads only)
-      --slidingSize [int]           Instructs Trim Galore to remove bp from the 3' end of read 1 AFTER adapter/quality trimming has been performed
-      --slidingCutoff [int]         Instructs Trim Galore to re move bp from the 3' end of read 2 AFTER adapter/quality trimming has been performed
-    Other options:
-      --help                        Print this help text
-      --outdir                      The output directory where the results will be saved
-      --cpus                        The number of cpus to reserve for multithread jobs
-      --memory                      The memory size to researve
-      --time                        The maximum execution time
-    """.stripIndent()
+  log.info"""
+  =========================================
+  Exome-Seq: Best Practice v${version}
+  =========================================
+  Usage:
+  The typical command for running the pipeline is as follows:
+  nextflow run lghm/ExomeSeq --reads '*.fastq.gz' --genome /data/rsc/b37/human_g1k_v37.fasta
+  Mandatory arguments:
+    --reads                       Path to input data (must be surrounded with quotes).
+    --genome                      Genome reference fasta path
+  Trimming options
+    --length [int]                Discard reads that became shorter than length [int] because of either quality or adapter trimming. Default: 18
+    --leading [int]               Instructs Trim Galore to remove bp from the 5' end of read 1 (or single-end reads)
+    --trailing [int]              Instructs Trim Galore to remove bp from the 5' end of read 2 (paired-end reads only)
+    --slidingSize [int]           Instructs Trim Galore to remove bp from the 3' end of read 1 AFTER adapter/quality trimming has been performed
+    --slidingCutoff [int]         Instructs Trim Galore to re move bp from the 3' end of read 2 AFTER adapter/quality trimming has been performed
+  Other options:
+    --help                        Print this help text
+    --outdir                      The output directory where the results will be saved
+    --cpus                        The number of cpus to reserve for multithread jobs
+    --memory                      The memory size to researve
+    --time                        The maximum execution time
+  """.stripIndent()
 }
 
 // Pipeline version
@@ -70,9 +70,13 @@ version = "0.1.0"
 // Show help message
 params.help = false
 if (params.help) {
-	helpMessage()
-	exit 0
+  helpMessage()
+  exit 0
 }
+
+// Configuration
+params.multiqc_config = "$baseDir/conf/multiqc_config.yaml"
+multiqc_config = file(params.multiqc_config)
 
 // Required params
 params.reads = ""
@@ -103,71 +107,71 @@ log.info "====================================="
 
 // Generate reads pairs
 Channel
-    .fromFilePairs( params.reads, size: 2)
-    .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}.\n" }
-	.set { reads_trimming }
+  .fromFilePairs( params.reads, size: 2)
+  .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}.\n" }
+  .set { reads_trimming }
 
 // Step 1. TrimGalore
 process trimomatic {
-	publishDir "${params.outdir}/trimomatic", mode: "copy",
-		saveAs: { filename -> 
-			if (filename.indexOf("trimmomatic.log") > 0) "logs/$filename"
-			else filename
-		}
+  publishDir "${params.outdir}/trimomatic", mode: "copy",
+    saveAs: { filename -> 
+      if (filename.indexOf("trimmomatic.log") > 0) "logs/$filename"
+      else filename }
 
-	input:
-	set val(name), file(reads) from reads_trimming
+  input:
+  set val(name), file(reads) from reads_trimming
 
-	output:
-	set val(name), file(reads), file("*_R{1,2}.trim.fq.gz") into reads_fastqc
-	file "*trim.fq.gz" into trimmed_reads
-	file "*trimmomatic.log" into trimgalore_results, trimgalore_logs
+  output:
+  set val(name), file(reads), file("*_R{1,2}.trim.fq.gz") into reads_fastqc
+  file "*trim.fq.gz" into trimmed_reads
+  file "*trimmomatic.log" into trimgalore_results, trimgalore_logs
 
-	script:
-	lead   = params.leading > 0 ? "LEADING:${params.leading}" : ""
-	trail  = params.trailing > 0 ? "TRAILING:${params.trailing}" : ""
-	slide  = (params.slidingCutoff > 0 && params.slidingSize > 0) ? "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" : ""
-	minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
-	"""
-	trimmomatic PE -threads ${params.cpus} \
-	$reads \
-	${name}_R1.trim.fq.gz ${name}_R1.unpair.trim.fq.gz \
-	${name}_R2.trim.fq.gz ${name}_R2.unpair.trim.fq.gz \
-	$lead $trail $slide $minlen 2> ${name}.trimmomatic.log
-	"""
+  script:
+  lead   = params.leading > 0 ? "LEADING:${params.leading}" : ""
+  trail  = params.trailing > 0 ? "TRAILING:${params.trailing}" : ""
+  slide  = (params.slidingCutoff > 0 && params.slidingSize > 0) ? "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" : ""
+  minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
+  """
+  trimmomatic PE -threads ${params.cpus} \
+  $reads \
+  ${name}_R1.trim.fq.gz ${name}_R1.unpair.trim.fq.gz \
+  ${name}_R2.trim.fq.gz ${name}_R2.unpair.trim.fq.gz \
+  $lead $trail $slide $minlen 2> ${name}.trimmomatic.log
+  """
 }
 
 // Step 2. FastQC
 process fastqc {
-	publishDir "${params.outdir}/fastqc", mode: "copy",
-		saveAs: { filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename" }
+  publishDir "${params.outdir}/fastqc", mode: "copy",
+    saveAs: { filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename" }
 
-	input:
-	set val(name), file(reads), file(trimmed) from reads_fastqc
+  input:
+  set val(name), file(reads), file(trimmed) from reads_fastqc
 
-	output:
-	file "*_fastqc.{zip,html}" into fastqc_results
+  output:
+  file "*_fastqc.{zip,html}" into fastqc_results
 
-	script:
-	"""
-	fastqc -q $reads $trimmed
-	"""
+  script:
+  """
+  fastqc -t ${params.cpus} -q $reads $trimmed
+  """
 }
 
 // Step X. MultiQC
 process multiqc {
-    publishDir "${params.outdir}/MultiQC", mode: 'copy'
+  publishDir "${params.outdir}/MultiQC", mode: 'copy'
 
-    input:
-    file (fastqc:'fastqc/*') from fastqc_results.collect()
-    file ('trimgalore/*') from trimgalore_results.collect()
+  input:
+  file multiqc_config
+  file (fastqc:'fastqc/*') from fastqc_results.collect()
+  file ('trimgalore/*') from trimgalore_results.collect()
 
-    output:
-    file "*multiqc_report.html" into multiqc_report
-    file "*_data" into multiqc_data
+  output:
+  file "*multiqc_report.html" into multiqc_report
+  file "*_data" into multiqc_data
 
-    script:
-    """
-    multiqc -f .
-    """
+  script:
+  """
+  multiqc -f --config $multiqc_config .
+  """
 }
