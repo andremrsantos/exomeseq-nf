@@ -124,7 +124,7 @@ process trimomatic {
 
   output:
   set val(name), file(reads), file("*_R{1,2}.trim.fq.gz") into reads_fastqc
-  set val(name), file("*trim.fq.gz") into trimmed_reads
+  set val(name), file("*R{1,2}.trim.fq.gz") into trimmed_reads
   file "*trimmomatic.log" into trimgalore_results, trimgalore_logs
 
   script:
