@@ -145,7 +145,7 @@ process trimomatic {
 
 // Step 2. FastQC
 process fastqc {
-  publishDir "${params.outdir}/fastqc", mode: "copy"
+  publishDir "${params.outdir}/fastqc", mode: "copy",
     saveAs: { filename -> filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename" }
 
   input:
