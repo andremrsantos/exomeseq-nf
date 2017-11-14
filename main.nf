@@ -174,8 +174,23 @@ process bwamem {
     -R \"@RG\tID:${name}\tSM:${name}\tPL:illumina\" \
     ${genome} ${reads} | \
     sambamba view -S -f bam /dev/stdin | \
-    sambamba sort -o /dev/stdout /dev/stdin | \
-    sambamba markdup /dev/stdin ${name}.bam
+    sambamba sort -m ${params.memory} -o ${name}.bam /dev/stdin
+  """
+}
+
+// Step 3.2 Sambamba markdup
+process markdup {
+  publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
+
+  input:
+  file (bam) from aligned_reads
+
+  output:
+  file "*mkd.bam" into aligned_mkd_reads
+  
+  script:
+  """
+  sambamba markdup -t ${params.cpu} ${bam} ${bam.baseName}.mkd.bam
   """
 }
 
