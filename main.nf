@@ -1,41 +1,6 @@
 #! /usr/bin/env nextflow run -resume
 
-def helpMessage() {
-  log.info """
-  =========================================
-  Exome-Seq: Best Practice v${version}
-  =========================================
-  Usage:
-  The typical command for running the pipeline is as follows:
-  nextflow run lghm/ExomeSeq --reads '*.fastq.gz' --genome /data/rsc/b37/human_g1k_v37.fasta
-  Mandatory arguments:
-    --reads                       Path to input data (must be surrounded with quotes).
-    --genome                      Genome reference fasta path
-  Trimming options
-    --length                [int] Discard reads that became shorter than length [int] because of either quality or adapter trimming. Default: 18
-    --leading               [int] Instructs Trim Galore to remove bp from the 5' end of read 1 (or single-end reads)
-    --trailing              [int] Instructs Trim Galore to remove bp from the 5' end of read 2 (paired-end reads only)
-    --slidingSize           [int] Instructs Trim Galore to remove bp from the 3' end of read 1 AFTER adapter/quality trimming has been performed
-    --slidingCutoff         [int] Instructs Trim Galore to re move bp from the 3' end of read 2 AFTER adapter/quality trimming has been performed
-  Other options:
-    --help                        Print this help text
-    --outdir                      The output directory where the results will be saved
-    --cpus                        The number of cpus to reserve for multithread jobs
-    --memory                      The memory size to researve
-    --time                        The maximum execution time
-  """.stripIndent()
-}
-
-// Pipeline version
-version = "0.1.0"
-
-// Show help message
-params.help = false
-if (params.help) {
-  helpMessage()
-  exit 0
-}
-
+// Pipeline Parameters
 // Configuration
 params.multiqc_config = "$baseDir/resource/multiqc_config.yaml"
 multiqc_config = file(params.multiqc_config)
@@ -51,6 +16,51 @@ params.trailing = 10
 params.slidingSize = 5
 params.slidingCutoff = 15
 
+def helpMessage() {
+  log.info """
+  =========================================
+  Exome-Seq: Best Practice v${version}
+  =========================================
+  Usage:
+  The typical command for running the pipeline is as follows:
+  nextflow run exomeseq/main.nf \
+    --reads '*.fastq.gz' \
+    --genome human_g1k_v37.fasta
+  
+  Mandatory arguments:
+    --reads         Path to input data (must be surrounded with quotes).
+    --genome        Genome reference fasta path
+  
+  Trimming options
+    --length        Minimal read lenght. Default: ${params.length}.
+    --leading       Cut bases off the start of a read whose quality is below. 
+                    Default: ${params.leading}.
+    --trailing      Cut bases off the end of a read whose quality is below. 
+                    Default: ${params.trailing}.
+    --slidingSize   In a slidding window cutoff, sets window size.
+                    Default: ${params.slidingSize}.
+    --slidingCutoff In a slidding window cutoff, sets window quality threshold.
+                    Default: ${params.slidindCutoff}.
+  
+  Other options:
+    --help         Print this help text
+    --outdir       The output directory where the results will be saved
+    --cpus         The number of cpus to reserve for multithread jobs
+    --memory       The memory size to researve
+    --time         The maximum execution time
+  """.stripIndent()
+}
+
+// Pipeline version
+version = "0.1.0"
+
+// Show help message
+params.help = false
+if (params.help) {
+  helpMessage()
+  exit 0
+}
+
 // Header log info
 log.info "====================================="
 log.info " Exome-Seq: Best Practice v${version}"
@@ -64,17 +74,20 @@ summary['Trim Trailing']   = params.trailing
 summary["Trim Sliding Window Size"] = params.slidingSize
 summary["Trim Sliding Window Cutoff"] = params.slidingCutoff
 summary['Output dir']     = params.outdir
-log.info summary.collect { k,v -> "${k.padRight(15)}: $v" }.join("\n")
+log.info summary.collect { k,v -> "${k.padRight(25)}: $v" }.join("\n")
 log.info "====================================="
 
+// Check genome reference
+genome = 
+  if (params.genome == "") exit(1, "Required reference genome")
+  else file(params.genome)
 // Generate reads pairs
-genome = file(params.genome)
 Channel
   .fromFilePairs( params.reads, size: 2)
   .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}.\n" }
   .into { reads_trimming; reads_fastqc }
 
-// Step 0. FastQC
+// Step 1. FastQC
 process fastqc {
     publishDir "${params.outdir}/logs/fastqc", mode: "copy",
     saveAs: {
@@ -94,16 +107,15 @@ process fastqc {
   """
 }
 
-
-// Step 1. TrimGalore
+// Step 2. TrimGalore
 process trimomatic {
     publishDir "${params.outdir}", mode: "copy",
     overwrite: false,
     saveAs: {
-	filename ->
-	if (filename.indexOf("trimmomatic.log") > 0) "logs/$filename"
-	else if (filename.indexOf("fq.gz") > 0) "reads/$filename"
-	else ""
+      filename -> 
+      if (filename.indexOf("trimmomatic.log") > 0) "logs/$filename"
+      else if (filename.indexOf("fq.gz") > 0) "reads/$filename"
+      else ""
     }
 
     input:
@@ -114,9 +126,12 @@ process trimomatic {
     file "*trimmomatic.log" into trimmomatic_results
 
     script:
-    lead   = params.leading > 0 ? "LEADING:${params.leading}" : ""
+    lead   = params.leading > 0  ? "LEADING:${params.leading}" : ""
     trail  = params.trailing > 0 ? "TRAILING:${params.trailing}" : ""
-    slide  = (params.slidingCutoff > 0 && params.slidingSize > 0) ? "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" : ""
+    slide  = 
+      if (params.slidingCutoff > 0 && params.slidingSize > 0) 
+        "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" 
+      else ""
     minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
     """
     trimmomatic PE -threads ${params.cpus} \
@@ -164,7 +179,7 @@ process markdup {
     """
 }
 
-// Step 3.2 Samtools Flagstat and Stat
+// Step 3.3 Samtools Flagstat and Stat
 process samtools_flagstat {
     publishDir "${params.outdir}/logs", mode: 'copy'
 
@@ -182,7 +197,7 @@ process samtools_flagstat {
     """
 }
 
-// Step X. MultiQC
+// Step 6. MultiQC
 process multiqc {
   publishDir "${params.outdir}/logs/MultiQC", mode: 'copy'
 
