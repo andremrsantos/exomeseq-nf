@@ -16,6 +16,11 @@ params.trailing = 10
 params.slidingSize = 5
 params.slidingCutoff = 15
 
+// GATK parameters
+params.dbsnp = ""
+params.mills = ""
+params.kgp3  = ""
+
 def helpMessage() {
   log.info """
   =========================================
@@ -78,9 +83,23 @@ log.info summary.collect { k,v -> "${k.padRight(25)}: $v" }.join("\n")
 log.info "====================================="
 
 // Check genome reference
-genome = 
-  if (params.genome == "") exit(1, "Required reference genome")
+genome = if (params.genome == "") 
+    exit(1, "Required reference genome")
   else file(params.genome)
+
+// Parse GATK params
+ref_dir = genome.getParent()
+ref_ver = ref_dir.baseName()
+dbsnp = if (params.dbsnp == "") 
+    file("${ref_dir}/dbsnp_138.${ref_ver}.vcf.gz")
+  else file(params.dbsnp)
+mills = if (params.mills == "") 
+    file("${ref_dir}/Mills_and_1000G_gold_standard.indels.${ref_ver}.vcf.gz")
+  else file(params.mills)
+params.kgp3  = if (params.kgp3 == "") 
+    file("${ref_dir}/1000G_phase3_v4_20130502.sites.vcf.gz")
+  else file(params.kgp3)
+
 // Generate reads pairs
 Channel
   .fromFilePairs( params.reads, size: 2)
@@ -171,7 +190,7 @@ process markdup {
     set val(name), file(bam) from aligned_reads
 
     output:
-    set val(name), file("*.mkd.bam") into aligned_mkd_reads
+    set val(name), file("*.mkd.bam") into align_stats, align_recal
 
     script:
     """
@@ -184,7 +203,7 @@ process samtools_flagstat {
     publishDir "${params.outdir}/logs", mode: 'copy'
 
     input:
-    set val(name), file(bam) from aligned_mkd_reads
+    set val(name), file(bam) from align_stats
 
     output:
     file "${name}_flagstat.txt" into flagstat_results
@@ -197,6 +216,88 @@ process samtools_flagstat {
     """
 }
 
+// Step 4.1 Base Recalibration
+process base_recalibration {
+  publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false,
+    saveAs: { it -> (it.indexOf("bam") > 0) ? "$it": "recal/$it" }
+
+
+  input:
+  val(name), file(bam) from align_recal
+
+  output:
+  val(name), file("*recal.bam") into align_varcall
+
+  script:
+  """
+  gatk -T BaseRecalibrator \
+    -R ${genome} \
+    -I ${bam} \
+    -o ${name}.recal.table \
+    -knownSites ${dbsnp} -knownSites ${mills} -knowSites ${kgp3} \
+    -nct ${params.cpus}
+  gatk -T PrintReads \
+    -R ${genome} \
+    -I ${bam} \
+    -BQSR ${name}.recal.table \
+    -nct ${params.cpus}
+  samtools index ${name}.recal.bam
+  """
+}
+
+// Step 4.2 Base Recalibration
+process haplotype_call {
+  publishDir "${params.outdir}/var/gvcf", mode: "copy", overwrite: false
+
+  input:
+  val(name), file(bam) from align_varcall
+
+  output:
+  file("*.gvcf") into varcall
+
+  script:
+  """
+  gatk -T HaplotypeCaller \
+    -R ${genome} \
+    -I ${bam} \
+    -o ${name}.gvcf \
+    --dbsnp ${dbsnp} \
+    --annotation HaplotypeScore \
+    --annotation MappingQualityRankSumTest \
+    --annotation QualByDepth \
+    --annotation ReadPosRankSumTest \
+    --annotation RMSMappingQuality \
+    --annotation FisherStrand \
+    --annotation Coverage \
+    --emitRefConfidence GVCF \
+    --genotyping_mode DISCOVERY \
+    -stand_call_conf 30 \
+    -nct ${params.cpus}
+  """
+}
+
+// Step 4.3 genotype call
+process genotype_call {
+  publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
+
+  input:
+  file (gvcfs) from varcall.collect()
+
+  output:
+  file("exoseq.vcf")
+
+  script:
+  vars = gvcfs.map(it -> "--variant $it")
+  """
+  gatk -T GenotypeGVCFs \
+     -R ${genome} \
+     -o exoseq.vcf \
+     -nt ${params.cpus} \
+     -D ${dbsnp} \
+     ${vars}
+  """ 
+}
+
 // Step 6. MultiQC
 process multiqc {
   publishDir "${params.outdir}/logs/MultiQC", mode: 'copy'
@@ -205,8 +306,8 @@ process multiqc {
   file multiqc_config
   file ('logs/fastqc/*') from fastqc_results.collect()
   file ('logs/trimmomatic*') from trimmomatic_results.collect()
-  file ('flagstat') from flagstat_results
-  file ('stats') from stats_results
+  file ('flagstat') from flagstat_results.collect()
+  file ('stats') from stats_results.collect()
 
   output:
   file "*multiqc_report.html" into multiqc_report
