@@ -1,42 +1,5 @@
 #! /usr/bin/env nextflow run -resume
 
-/*
-## ExomeSeq Best Practice
-
-TODO: short description
-
-### Homepage / Documentation
-
-TODO: URL
-
-### Authors
-
-- Phil Ewels <phil.ewels@scilifelab.se>
-- Chuan Wang <chuan.wang@scilifelab.se>
-- Rickard Hammarén <rickard.hammaren@scilifelab.se>
-
-### Pipeline overview
-TODO: pipeline overview
-1.   FastQC for raw sequencing reads quality control
-2.   Trim Galore! for adapter trimming
-3.1. Bowtie 1 alignment against miRBase mature miRNA
-3.2. Post-alignment processing of miRBase mature miRNA counts
-3.3. edgeR analysis on miRBase mature miRNA counts
-  - TMM normalization and a table of top expression mature miRNA
-    - MDS plot clustering samples
-    - Heatmap of sample similarities
-4.1. Bowtie 1 alignment against miRBase hairpin for the unaligned reads in step 3
-4.2. Post-alignment processing of miRBase hairpin counts
-4.3. edgeR analysis on miRBase hairpin counts
-    - TMM normalization and a table of top expression hairpin
-    - MDS plot clustering samples
-    - Heatmap of sample similarities
-5.1. Bowtie 2 alignment against host reference genome
-5.2. Post-alignment processing of Bowtie 2
-6.   NGI-Visualization of Bowtie 2 alignment statistics
-7.   MultiQC
-*/
-
 def helpMessage() {
   log.info """
   =========================================
@@ -148,7 +111,7 @@ process trimomatic {
 
     output:
     set val(name), file("*R{1,2}.trim.fq.gz") into trimmed_reads
-    file "*trimmomatic.log" into trimmomatic_logs
+    file "*trimmomatic.log" into trimmomatic_results
 
     script:
     lead   = params.leading > 0 ? "LEADING:${params.leading}" : ""
@@ -173,7 +136,7 @@ process bwamem {
     set val(name), file(reads) from trimmed_reads
 
     output:
-    file "*.bam" into aligned_reads
+    set val(name), file("*.bam") into aligned_reads
 
     script:
     """
@@ -190,14 +153,14 @@ process markdup {
     publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
 
     input:
-    file (bam) from aligned_reads
+    set val(name), file(bam) from aligned_reads
 
     output:
-    file "*.mkd.bam" into aligned_mkd_reads
+    set val(name), file("*.mkd.bam") into aligned_mkd_reads
 
     script:
     """
-    sambamba markdup -t ${params.cpus} ${bam} ${bam.baseName}.mkd.bam
+    sambamba markdup -t ${params.cpus} ${bam} ${name}.mkd.bam
     """
 }
 
@@ -206,16 +169,16 @@ process samtools_flagstat {
     publishDir "${params.outdir}/logs", mode: 'copy'
 
     input:
-    file bam from aligned_mkd_reads
+    set val(name), file(bam) from aligned_mkd_reads
 
     output:
-    file "${bam.baseName}_flagstat.txt" into flagstat_results
-    file "${bam.baseName}_stats.txt" into stats_results
+    file "${name}_flagstat.txt" into flagstat_results
+    file "${name}_stats.txt" into stats_results
 
     script:
     """
-    samtools flagstat $bam > ${bam.baseName}_flagstat.txt
-    samtools stats $bam > ${bam.baseName}_stats.txt
+    samtools flagstat $bam > ${name}_flagstat.txt
+    samtools stats $bam > ${name}_stats.txt
     """
 }
 
