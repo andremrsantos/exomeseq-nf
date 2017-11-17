@@ -129,10 +129,9 @@ Channel
 
 // Step 1. FastQC
 process fastqc {
-    publishDir "${params.outdir}/logs/fastqc", mode: "copy",
-    saveAs: {
-	filename ->
-	filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename"
+  publishDir "${params.outdir}/logs/fastqc", mode: "copy",
+    saveAs: { filename ->
+      filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename"
     }
 
   input:
@@ -147,77 +146,83 @@ process fastqc {
   """
 }
 
-// Step 2. TrimGalore
+// Step 2. Trimmomatic
 process trimomatic {
-    publishDir "${params.outdir}", mode: "copy",
-    overwrite: false,
-    saveAs: {
-      filename -> 
+  publishDir "${params.outdir}", mode: "copy", overwrite: false,
+    saveAs: { filename -> 
       if (filename.indexOf("trimmomatic.log") > 0) "logs/$filename"
       else if (filename.indexOf("fq.gz") > 0) "reads/$filename"
       else ""
     }
 
-    input:
-    set val(name), file(reads) from reads_trimming
+  input:
+  set val(name), file(reads) from reads_trimming
 
-    output:
-    set val(name), file("*R{1,2}.trim.fq.gz") into trimmed_reads
-    file "*trimmomatic.log" into trimmomatic_results
+  output:
+  set val(name), file("*R{1,2}.trim.fq.gz") into trimmed_reads
+  file "*trimmomatic.log" into trimmomatic_results
 
-    script:
-    lead   = params.leading > 0  ? "LEADING:${params.leading}" : ""
-    trail  = params.trailing > 0 ? "TRAILING:${params.trailing}" : ""
-    if (params.slidingCutoff > 0 && params.slidingSize > 0) 
-      slide  = "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" 
-    else 
-      slide  = ""
-    minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
-    """
-    trimmomatic PE -threads ${params.cpus} \
-      $reads \
-      ${name}_R1.trim.fq.gz ${name}_R1.unpaired.fq.gz \
-      ${name}_R2.trim.fq.gz ${name}_R2.unpaired.fq.gz \
-      $lead $trail $slide $minlen \
-      2> ${name}.trimmomatic.log
+  script:
+  lead   = params.leading > 0  ? "LEADING:${params.leading}" : ""
+  trail  = params.trailing > 0 ? "TRAILING:${params.trailing}" : ""
+  if (params.slidingCutoff > 0 && params.slidingSize > 0) 
+    slide  = "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" 
+  else 
+    slide  = ""
+  minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
+  """
+  trimmomatic PE -threads ${params.cpus} \
+    $reads \
+    ${name}_R1.trim.fq.gz ${name}_R1.unpaired.fq.gz \
+    ${name}_R2.trim.fq.gz ${name}_R2.unpaired.fq.gz \
+    $lead $trail $slide $minlen \
+    2> ${name}.trimmomatic.log
   """
 }
 
 // Step 3.1 BWA Align
 process bwamem {
-    publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
+  publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
 
-    input:
-    set val(name), file(reads) from trimmed_reads
+  input:
+  set val(name), file(reads) from trimmed_reads
 
-    output:
-    set val(name), file("*.bam") into aligned_reads
+  output:
+  set val(name), file("*.bam"), file("*.bam.bai") into aligned_reads
 
-    script:
-    """
-    bwa mem -M -t ${params.cpus} \
-      -R \"@RG\tID:${name}\tSM:${name}\tPL:illumina\" \
-      ${genome} ${reads} | \
-      sambamba view -S -f bam /dev/stdin | \
-      sambamba sort -m ${params.memory} -o ${name}.bam /dev/stdin
-    """
+  script:
+  """
+  bwa mem -M -t ${params.cpus} \
+    -R \"@RG\tID:${name}\tSM:${name}\tPL:illumina\" \
+    ${genome} ${reads} | \
+    sambamba view -S -f bam /dev/stdin | \
+    sambamba sort -m ${params.memory} -o ${name}.bam /dev/stdin
+  """
 }
 
-// Step 3.2 Sambamba mark duplicates
+// Step 3.2 Picard Mark Duplicates
 process markdup {
-    publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
+  publishDir "${params.outdir}", mode: "copy", overwrite: false,
+    saveAs: { fn -> 
+      fn.indexOf("mkd_metrics") > 0 ? "logs/$fn" : "alignment/$fn"
+    }
 
-    input:
-    set val(name), file(bam) from aligned_reads
+  input:
+  set val(name), file(bam), file(bam_idx) from aligned_reads
 
-    output:
-    set val(name), file("*.mkd.bam") into align_stats, align_target, align_recal
-    file("*mkd.bam.bai") into align_idx
-
-    script:
-    """
-    sambamba markdup -t ${params.cpus} ${bam} ${name}.mkd.bam
-    """
+  output:
+  set val(name), file("*.mkd.bam"), file("*mkd.bam.bai") 
+    into align_metrics, align_target, align_recal
+  
+  script:
+  """
+  picard MarkDuplicates \
+    I=${bam} \
+    O=${name}.mkd.bam \
+    M=${name}.mkd_metrics \
+    ASSUME_SORTED=true
+  samtools index ${name}.mkd.bam
+  """
 }
 
 // Step 3.3 Samtools Flagstat and Stat
@@ -225,7 +230,7 @@ process samtools_flagstat {
     publishDir "${params.outdir}/logs", mode: 'copy'
 
     input:
-    set val(name), file(bam) from align_stats
+    set val(name), file(bam) from align_metrics
 
     output:
     file "${name}.flagstat" into flagstat_results
@@ -243,7 +248,7 @@ process hs_metrics {
   publishDir "${params.outdir}/logs", mode: 'copy'
 
   input:
-  set val(name), file(bam) from align_target
+  set val(name), file(bam), file(bam_idx) from align_target
 
   output:
   file("*.hs_metrics") into hsmetric_results
@@ -269,12 +274,11 @@ process base_recalibration {
   publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
 
   input:
-  set val(name), file(bam) from align_recal
+  set val(name), file(bam), file(bam_idx) from align_recal
   file(index) from align_idx
 
   output:
-  set val(name), file("*recal.bam") into align_varcall
-  file("*bam.bai") into align_varcall_idx
+  set val(name), file("*recal.bam"), file("*recal.bam.bai") into align_varcall
 
   script:
   """
@@ -300,7 +304,7 @@ process haplotype_call {
   publishDir "${params.outdir}/var/gvcf", mode: "copy", overwrite: false
 
   input:
-  set val(name), file(bam) from align_varcall
+  set val(name), file(bam), file(bam_idx) from align_varcall
   file index from align_varcall_idx
 
   output:
