@@ -38,9 +38,9 @@ which takes a set of FASTQ files and performs:
     1. **BWA MEM** alignment and sorting.
     2. **Sambamba** Mark Duplicates
     3. **Samtools** Flagstats and Stats
+    4. **Base Recalibration**
 4.  **GATK** Variant Calling
-    1. **Base Recalibration** 
-    2. **Haplotype Caller**
-    3. **Call Pool Genotype**
+    1. **Haplotype Caller**
+    2. **Call Genotype**
 5.  **GATK** Variant Recalibration
 6.  MultiQC
