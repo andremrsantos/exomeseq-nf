@@ -50,9 +50,10 @@ def helpMessage() {
                     Default: ${params.slidindCutoff}.
   Other options:
     --help         Print this help text
-    --outdir       The output directory where the results will be saved
+    --project      Name of the running project
     --cpus         The number of cpus to reserve for multithread jobs
     --memory       The memory size to researve
+    --outdir       The output directory where the results will be saved
     --time         The maximum execution time
   """.stripIndent()
 }
@@ -351,7 +352,7 @@ process genotype_call {
   gatk -T GenotypeGVCFs \
     -R ${genome} \
     -L ${target} \
-    -o exoseq.vcf \
+    -o ${params.project}.vcf \
     -D ${dbsnp} \
     ${vars}
   """ 
