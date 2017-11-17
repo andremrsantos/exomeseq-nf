@@ -129,7 +129,7 @@ Channel
 
 // Step 1. FastQC
 process fastqc {
-  publishDir "${params.outdir}/logs/fastqc", mode: "copy",
+  publishDir "${params.outdir}/reports/fastqc", mode: "copy",
     saveAs: { filename ->
       filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename"
     }
@@ -150,8 +150,8 @@ process fastqc {
 process trimomatic {
   publishDir "${params.outdir}", mode: "copy", overwrite: false,
     saveAs: { filename -> 
-      if (filename.indexOf("trimmomatic.log") > 0) "logs/$filename"
-      else if (filename.indexOf("fq.gz") > 0) "reads/$filename"
+      if (filename.indexOf("trimmomatic.log") > 0) "reports/$filename"
+      else if (filename.indexOf("fq.gz") > 0) "seq/$filename"
       else ""
     }
 
@@ -159,7 +159,7 @@ process trimomatic {
   set val(name), file(reads) from reads_trimming
 
   output:
-  set val(name), file("*R{1,2}.trim.fq.gz") into trimmed_reads
+  set val(name), file("*R{1,2}.trim.fq.gz") into reads_align
   file "*trimmomatic.log" into trimmomatic_results
 
   script:
@@ -188,7 +188,7 @@ process bwamem {
   set val(name), file(reads) from trimmed_reads
 
   output:
-  set val(name), file("*.bam"), file("*.bam.bai") into aligned_reads
+  set val(name), file("*.bam"), file("*.bam.bai") into reads_align
 
   script:
   """
@@ -204,81 +204,36 @@ process bwamem {
 process markdup {
   publishDir "${params.outdir}", mode: "copy", overwrite: false,
     saveAs: { fn -> 
-      fn.indexOf("mkd_metrics") > 0 ? "logs/$fn" : "alignment/$fn"
+      fn.indexOf("metrics") > 0 ? "reports/$fn" : "alignment/$fn"
     }
 
   input:
-  set val(name), file(bam), file(bam_idx) from aligned_reads
+  set val(name), file(bam), file(bam_idx) from markdup_alignment
 
   output:
-  set val(name), file("*.mkd.bam"), file("*mkd.bam.bai") 
-    into align_metrics, align_target, align_recal
+  set val(name), file("*.mkd.bam"), file("*mkd.bam.bai") into recal_alignment
   
   script:
   """
   picard MarkDuplicates \
     I=${bam} \
     O=${name}.mkd.bam \
-    M=${name}.mkd_metrics \
+    M=${name}.markdup_metrics \
     ASSUME_SORTED=true
   samtools index ${name}.mkd.bam
   """
 }
 
-// Step 3.3 Samtools Flagstat and Stat
-process samtools_flagstat {
-    publishDir "${params.outdir}/logs", mode: 'copy'
-
-    input:
-    set val(name), file(bam) from align_metrics
-
-    output:
-    file "${name}.flagstat" into flagstat_results
-    file "${name}.stats" into stats_results
-
-    script:
-    """
-    samtools flagstat $bam > ${name}.flagstat
-    samtools stats $bam > ${name}.stats
-    """
-}
-
-// Step 3.4 HsMetrics
-process hs_metrics {
-  publishDir "${params.outdir}/logs", mode: 'copy'
-
-  input:
-  set val(name), file(bam), file(bam_idx) from align_target
-
-  output:
-  file("*.hs_metrics") into hsmetric_results
-
-  script:
-  """
-  picard CollectHsMetrics \
-    BAIT_INTERVALS=${bait} \
-    TARGET_INTERVALS=${target} \
-    INPUT=${bam} \
-    OUTPUT=${name}.hs_metrics \
-    METRIC_ACCUMULATION_LEVEL="ALL_READS" \
-    VERBOSITY=INFO \
-    VALIDATION_STRINGENCY=SILENT \
-    QUIET=false \
-    COMPRESSION_LEVEL=5 \
-    MAX_RECORDS_IN_RAM=500000
-  """
-}
-
-// Step 3.5 Base Recalibration
+// Step 3.3 Base Recalibration
 process base_recalibration {
   publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
 
   input:
-  set val(name), file(bam), file(bam_idx) from align_recal
-  file(index) from align_idx
+  set val(name), file(bam), file(bam_idx) from recal_alignment
 
   output:
-  set val(name), file("*recal.bam"), file("*recal.bam.bai") into align_varcall
+  set val(name), file("*recal.bam"), file("*recal.bam.bai") into 
+    align_metrics, align_varcall
 
   script:
   """
@@ -298,6 +253,58 @@ process base_recalibration {
   samtools index ${name}.recal.bam
   """
 }
+
+
+// Step 3.4 HsMetrics
+process hs_metrics {
+  publishDir "${params.outdir}/reports", mode: 'copy'
+
+  input:
+  set val(name), file(bam), file(bam_idx) from align_metrics
+
+  output:
+  file("*{metrics,pdf}") into hsmetric_results
+
+  script:
+  """
+  picard CollectAlignmentSummaryMetrics I=${bam} O=${name}.align_metrics \
+    REFERENCE_SEQUENCE=${genome} \
+    ASSUME_SORTED=true \
+    METRIC_ACCUMULATION_LEVEL="ALL_READS"
+    VALIDATION_STRINGENCY=SILENT \
+    QUIET=false \
+    COMPRESSION_LEVEL=5 \
+    MAX_RECORDS_IN_RAM=500000 \
+    CREATE_INDEX=false \
+    CREATE_MD5_FILE=false
+  
+  picarc CollectInsertSizeMetrics I=${bam} O=${name}.insert_metrics \
+    HISTOGRAM_FILE=${name} \
+    DEVIATIONS=10.0 \
+    MINIMUM_PCT=0.05 \
+    ASSUME_SORTED=true \
+    METRIC_ACCUMULATION_LEVEL="ALL_READS"
+    VALIDATION_STRINGENCY=SILENT \
+    QUIET=false \
+    COMPRESSION_LEVEL=5 \
+    MAX_RECORDS_IN_RAM=500000 \
+    CREATE_INDEX=false \
+    CREATE_MD5_FILE=false
+  
+  picard CollectHsMetrics I=${bam} O=${name}.hs_metrics \
+    BAIT_INTERVALS=${bait} \
+    TARGET_INTERVALS=${target} \
+    METRIC_ACCUMULATION_LEVEL="ALL_READS" \
+    VERBOSITY=INFO \
+    VALIDATION_STRINGENCY=SILENT \
+    QUIET=false \
+    COMPRESSION_LEVEL=5 \
+    MAX_RECORDS_IN_RAM=500000 \ 
+    CREATE_INDEX=false \
+    CREATE_MD5_FILE=false
+  """
+}
+
 
 // Step 4.1 Haplotype Caller
 process haplotype_call {
@@ -352,7 +359,7 @@ process genotype_call {
 
 // Step 6. MultiQC
 process multiqc {
-  publishDir "${params.outdir}/logs/MultiQC", mode: 'copy'
+  publishDir "${params.outdir}/reports/MultiQC", mode: 'copy'
 
   input:
   file multiqc_config
@@ -360,7 +367,7 @@ process multiqc {
   file (trim) from trimmomatic_results.collect()
   file (flagstat) from flagstat_results.collect()
   file (stat) from stats_results.collect()
-  // file ('logs/*hs_metrics') from hsmetric_results.collect()
+  file (metrics) from hsmetric_results.collect()
 
   output:
   file "*multiqc_report.html" into multiqc_report
