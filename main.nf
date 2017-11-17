@@ -33,13 +33,11 @@ def helpMessage() {
   nextflow run exomeseq/main.nf \
     --reads '*.fastq.gz' \
     --genome human_g1k_v37.fasta
-  
   Mandatory arguments:
     --reads         Path to input data (must be surrounded with quotes).
     --genome        Genome reference fasta path
     --target        Targeted regions interval
     --bait          Bait regions interval
-  
   Trimming options
     --length        Minimal read lenght. Default: ${params.length}.
     --leading       Cut bases off the start of a read whose quality is below. 
@@ -50,7 +48,6 @@ def helpMessage() {
                     Default: ${params.slidingSize}.
     --slidingCutoff In a slidding window cutoff, sets window quality threshold.
                     Default: ${params.slidindCutoff}.
-  
   Other options:
     --help         Print this help text
     --outdir       The output directory where the results will be saved
@@ -109,14 +106,18 @@ def summary = [:]
 summary['Reads']           = params.reads
 summary['Genome']          = genome
 summary['Target Interval'] = target
+summary['Target Baits']    = bait
+summary['Mutation References'] = ""
 summary['dbSNP']           = dbsnp
 summary['Mills Indels']    = mills
 summary['1000G phase 3']   = kgp3
+summary['Trimming Options'] = ""
 summary['Trim Min Lenght'] = params.length
 summary['Trim Leading']    = params.leading
 summary['Trim Trailing']   = params.trailing
 summary["Trim Sliding Window Size"]   = params.slidingSize
 summary["Trim Sliding Window Cutoff"] = params.slidingCutoff
+summary["Global Options"]  = ""
 summary['Output dir']      = params.outdir
 log.info summary.collect { k,v -> "${k.padRight(30)}: $v" }.join("\n")
 log.info "====================================="
@@ -185,10 +186,10 @@ process bwamem {
   publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
 
   input:
-  set val(name), file(reads) from trimmed_reads
+  set val(name), file(reads) from reads_align
 
   output:
-  set val(name), file("*.bam"), file("*.bam.bai") into reads_align
+  set val(name), file("*.bam"), file("*.bam.bai") into markdup_alignment
 
   script:
   """
@@ -212,6 +213,7 @@ process markdup {
 
   output:
   set val(name), file("*.mkd.bam"), file("*mkd.bam.bai") into recal_alignment
+  file("*metrics") into markdup_results
   
   script:
   """
@@ -232,8 +234,7 @@ process base_recalibration {
   set val(name), file(bam), file(bam_idx) from recal_alignment
 
   output:
-  set val(name), file("*recal.bam"), file("*recal.bam.bai") into 
-    align_metrics, align_varcall
+  set val(name), file("*recal.bam"), file("*recal.bam.bai") into align_metrics, align_varcall
 
   script:
   """
@@ -299,7 +300,7 @@ process hs_metrics {
     VALIDATION_STRINGENCY=SILENT \
     QUIET=false \
     COMPRESSION_LEVEL=5 \
-    MAX_RECORDS_IN_RAM=500000 \ 
+    MAX_RECORDS_IN_RAM=500000 \
     CREATE_INDEX=false \
     CREATE_MD5_FILE=false
   """
@@ -312,7 +313,6 @@ process haplotype_call {
 
   input:
   set val(name), file(bam), file(bam_idx) from align_varcall
-  file index from align_varcall_idx
 
   output:
   file("*.gvcf") into varcall
@@ -363,10 +363,9 @@ process multiqc {
 
   input:
   file multiqc_config
-  file (fastqc) from fastqc_results.collect()
-  file (trim) from trimmomatic_results.collect()
-  file (flagstat) from flagstat_results.collect()
-  file (stat) from stats_results.collect()
+  file (fastqc)  from fastqc_results.collect()
+  file (trim)    from trimmomatic_results.collect()
+  file (markdup) from markdup_results.collect()
   file (metrics) from hsmetric_results.collect()
 
   output:
