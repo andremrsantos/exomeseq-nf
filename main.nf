@@ -6,8 +6,10 @@ params.multiqc_config = "$baseDir/resource/multiqc_config.yaml"
 multiqc_config = file(params.multiqc_config)
 
 // Required params
-params.reads = ""
-params.genome = ""
+params.reads  = false
+params.genome = false
+params.target = false
+params.bait   = false
 
 // Custom trimming options
 params.length = 36
@@ -17,9 +19,9 @@ params.slidingSize = 5
 params.slidingCutoff = 15
 
 // GATK parameters
-params.dbsnp = ""
-params.mills = ""
-params.kgp3  = ""
+params.dbsnp = false
+params.mills = false
+params.kgp3  = false
 
 def helpMessage() {
   log.info """
@@ -35,6 +37,8 @@ def helpMessage() {
   Mandatory arguments:
     --reads         Path to input data (must be surrounded with quotes).
     --genome        Genome reference fasta path
+    --target        Targeted regions interval
+    --bait          Bait regions interval
   
   Trimming options
     --length        Minimal read lenght. Default: ${params.length}.
@@ -66,39 +70,56 @@ if (params.help) {
   exit 0
 }
 
+// Check required arguments
+if (!params.reads || !params.genome || !params.target || !params.bait) {
+  msg = "Parameters '--reads', '--genome', '--bait' and '--target' are required to run."
+  exit(1, msg)
+}
+genome = file(params.genome)
+target = file(params.target)
+bait   = file(params.bait)
+
+// Exit if not find target
+if (!target.exists() || !bait.exists())
+  exit(1, "Could not find target intervals at `${target}` or bait at `${bait}`.")
+
+// Parse GATK params
+ref_dir = genome.getParent()
+ref_ver = ref_dir.getBaseName()
+if (!params.dbsnp) 
+  dbsnp = file("${ref_dir}/dbsnp_138.${ref_ver}.vcf.gz")
+else 
+  dbsnp = file(params.dbsnp)
+if (!params.mills) 
+  mills = file("${ref_dir}/Mills_and_1000G_gold_standard.indels.${ref_ver}.vcf.gz")
+else 
+  mills = file(params.mills)
+
+if (!params.kgp3) 
+  kgp3 = file("${ref_dir}/1000G_phase3_v4_20130502.sites.vcf.gz")
+else
+  kgp3 = file(params.kgp3)
+
+
 // Header log info
 log.info "====================================="
 log.info " Exome-Seq: Best Practice v${version}"
 log.info "====================================="
 def summary = [:]
 summary['Reads']           = params.reads
-summary['Genome']          = params.genome
+summary['Genome']          = genome
+summary['Target Interval'] = target
+summary['dbSNP']           = dbsnp
+summary['Mills Indels']    = mills
+summary['1000G phase 3']   = kgp3
 summary['Trim Min Lenght'] = params.length
 summary['Trim Leading']    = params.leading
 summary['Trim Trailing']   = params.trailing
-summary["Trim Sliding Window Size"] = params.slidingSize
+summary["Trim Sliding Window Size"]   = params.slidingSize
 summary["Trim Sliding Window Cutoff"] = params.slidingCutoff
-summary['Output dir']     = params.outdir
-log.info summary.collect { k,v -> "${k.padRight(25)}: $v" }.join("\n")
+summary['Output dir']      = params.outdir
+log.info summary.collect { k,v -> "${k.padRight(30)}: $v" }.join("\n")
 log.info "====================================="
-
-// Check genome reference
-genome = if (params.genome == "") 
-    exit(1, "Required reference genome")
-  else file(params.genome)
-
-// Parse GATK params
-ref_dir = genome.getParent()
-ref_ver = ref_dir.baseName()
-dbsnp = if (params.dbsnp == "") 
-    file("${ref_dir}/dbsnp_138.${ref_ver}.vcf.gz")
-  else file(params.dbsnp)
-mills = if (params.mills == "") 
-    file("${ref_dir}/Mills_and_1000G_gold_standard.indels.${ref_ver}.vcf.gz")
-  else file(params.mills)
-params.kgp3  = if (params.kgp3 == "") 
-    file("${ref_dir}/1000G_phase3_v4_20130502.sites.vcf.gz")
-  else file(params.kgp3)
 
 // Generate reads pairs
 Channel
@@ -147,10 +168,10 @@ process trimomatic {
     script:
     lead   = params.leading > 0  ? "LEADING:${params.leading}" : ""
     trail  = params.trailing > 0 ? "TRAILING:${params.trailing}" : ""
-    slide  = 
-      if (params.slidingCutoff > 0 && params.slidingSize > 0) 
-        "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" 
-      else ""
+    if (params.slidingCutoff > 0 && params.slidingSize > 0) 
+      slide  = "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" 
+    else 
+      slide  = ""
     minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
     """
     trimmomatic PE -threads ${params.cpus} \
@@ -190,7 +211,8 @@ process markdup {
     set val(name), file(bam) from aligned_reads
 
     output:
-    set val(name), file("*.mkd.bam") into align_stats, align_recal
+    set val(name), file("*.mkd.bam") into align_stats, align_target, align_recal
+    file("*mkd.bam.bai") into align_idx
 
     script:
     """
@@ -206,51 +228,80 @@ process samtools_flagstat {
     set val(name), file(bam) from align_stats
 
     output:
-    file "${name}_flagstat.txt" into flagstat_results
-    file "${name}_stats.txt" into stats_results
+    file "${name}.flagstat" into flagstat_results
+    file "${name}.stats" into stats_results
 
     script:
     """
-    samtools flagstat $bam > ${name}_flagstat.txt
-    samtools stats $bam > ${name}_stats.txt
+    samtools flagstat $bam > ${name}.flagstat
+    samtools stats $bam > ${name}.stats
     """
 }
 
-// Step 4.1 Base Recalibration
-process base_recalibration {
-  publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false,
-    saveAs: { it -> (it.indexOf("bam") > 0) ? "$it": "recal/$it" }
-
+// Step 3.4 HsMetrics
+process hs_metrics {
+  publishDir "${params.outdir}/logs", mode: 'copy'
 
   input:
-  val(name), file(bam) from align_recal
+  set val(name), file(bam) from align_target
 
   output:
-  val(name), file("*recal.bam") into align_varcall
+  file("*.hs_metrics") into hsmetric_results
+
+  script:
+  """
+  picard CollectHsMetrics \
+    BAIT_INTERVALS=${bait} \
+    TARGET_INTERVALS=${target} \
+    INPUT=${bam} \
+    OUTPUT=${name}.hs_metrics \
+    METRIC_ACCUMULATION_LEVEL="ALL_READS" \
+    VERBOSITY=INFO \
+    VALIDATION_STRINGENCY=SILENT \
+    QUIET=false \
+    COMPRESSION_LEVEL=5 \
+    MAX_RECORDS_IN_RAM=500000
+  """
+}
+
+// Step 3.5 Base Recalibration
+process base_recalibration {
+  publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
+
+  input:
+  set val(name), file(bam) from align_recal
+  file(index) from align_idx
+
+  output:
+  set val(name), file("*recal.bam") into align_varcall
+  file("*bam.bai") into align_varcall_idx
 
   script:
   """
   gatk -T BaseRecalibrator \
     -R ${genome} \
+    -L ${target} \
     -I ${bam} \
     -o ${name}.recal.table \
-    -knownSites ${dbsnp} -knownSites ${mills} -knowSites ${kgp3} \
+    -knownSites ${dbsnp} -knownSites ${mills} -knownSites ${kgp3} \
     -nct ${params.cpus}
   gatk -T PrintReads \
     -R ${genome} \
     -I ${bam} \
+    -o ${name}.recal.bam \
     -BQSR ${name}.recal.table \
     -nct ${params.cpus}
   samtools index ${name}.recal.bam
   """
 }
 
-// Step 4.2 Base Recalibration
+// Step 4.1 Haplotype Caller
 process haplotype_call {
   publishDir "${params.outdir}/var/gvcf", mode: "copy", overwrite: false
 
   input:
-  val(name), file(bam) from align_varcall
+  set val(name), file(bam) from align_varcall
+  file index from align_varcall_idx
 
   output:
   file("*.gvcf") into varcall
@@ -260,15 +311,11 @@ process haplotype_call {
   gatk -T HaplotypeCaller \
     -R ${genome} \
     -I ${bam} \
+    -L ${target} \
     -o ${name}.gvcf \
     --dbsnp ${dbsnp} \
-    --annotation HaplotypeScore \
-    --annotation MappingQualityRankSumTest \
-    --annotation QualByDepth \
-    --annotation ReadPosRankSumTest \
-    --annotation RMSMappingQuality \
-    --annotation FisherStrand \
-    --annotation Coverage \
+    -variant_index_type LINEAR \
+    -variant_index_parameter 128000 \
     --emitRefConfidence GVCF \
     --genotyping_mode DISCOVERY \
     -stand_call_conf 30 \
@@ -276,7 +323,7 @@ process haplotype_call {
   """
 }
 
-// Step 4.3 genotype call
+// Step 4.2 genotype call
 process genotype_call {
   publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
 
@@ -284,17 +331,18 @@ process genotype_call {
   file (gvcfs) from varcall.collect()
 
   output:
-  file("exoseq.vcf")
+  file("exoseq.vcf") into sample_variant
 
   script:
-  vars = gvcfs.map(it -> "--variant $it")
+  vars = gvcfs.collect({ var -> "--variant $var"}).join(" ")
   """
+  echo $gvcfs
   gatk -T GenotypeGVCFs \
-     -R ${genome} \
-     -o exoseq.vcf \
-     -nt ${params.cpus} \
-     -D ${dbsnp} \
-     ${vars}
+    -R ${genome} \
+    -L ${target} \
+    -o exoseq.vcf \
+    -D ${dbsnp} \
+    ${vars}
   """ 
 }
 
@@ -304,10 +352,11 @@ process multiqc {
 
   input:
   file multiqc_config
-  file ('logs/fastqc/*') from fastqc_results.collect()
-  file ('logs/trimmomatic*') from trimmomatic_results.collect()
-  file ('flagstat') from flagstat_results.collect()
-  file ('stats') from stats_results.collect()
+  file (fastqc) from fastqc_results.collect()
+  file (trim) from trimmomatic_results.collect()
+  file (flagstat) from flagstat_results.collect()
+  file (stat) from stats_results.collect()
+  // file ('logs/*hs_metrics') from hsmetric_results.collect()
 
   output:
   file "*multiqc_report.html" into multiqc_report
