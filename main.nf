@@ -280,7 +280,7 @@ process hs_metrics {
     CREATE_INDEX=false \
     CREATE_MD5_FILE=false
   
-  picarc CollectInsertSizeMetrics I=${bam} O=${name}.insert_metrics \
+  picard CollectInsertSizeMetrics I=${bam} O=${name}.insert_metrics \
     HISTOGRAM_FILE=${name} \
     DEVIATIONS=10.0 \
     MINIMUM_PCT=0.05 \
@@ -343,12 +343,11 @@ process genotype_call {
   file (gvcfs) from varcall.collect()
 
   output:
-  file("exoseq.vcf") into sample_variant
+  file("*.vcf") into sample_variant
 
   script:
   vars = gvcfs.collect({ var -> "--variant $var"}).join(" ")
   """
-  echo $gvcfs
   gatk -T GenotypeGVCFs \
     -R ${genome} \
     -L ${target} \
@@ -361,6 +360,7 @@ process genotype_call {
 // Step 6. MultiQC
 process multiqc {
   publishDir "${params.outdir}/reports/MultiQC", mode: 'copy'
+  errorStrategy "ignore"  
 
   input:
   file multiqc_config
