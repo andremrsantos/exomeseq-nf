@@ -1,28 +1,5 @@
 #! /usr/bin/env nextflow run -resume
 
-// Pipeline Parameters
-// Configuration
-params.multiqc_config = "$baseDir/resource/multiqc_config.yaml"
-multiqc_config = file(params.multiqc_config)
-
-// Required params
-params.reads  = false
-params.genome = false
-params.target = false
-params.bait   = false
-
-// Custom trimming options
-params.length = 36
-params.leading = 10
-params.trailing = 10
-params.slidingSize = 5
-params.slidingCutoff = 15
-
-// GATK parameters
-params.dbsnp = false
-params.mills = false
-params.kgp3  = false
-
 def helpMessage() {
   log.info """
   =========================================
@@ -68,6 +45,17 @@ if (params.help) {
   exit 0
 }
 
+// Pipeline Parameters
+// Configuration
+params.multiqc_config = "$baseDir/resource/multiqc_config.yaml"
+multiqc_config = file(params.multiqc_config)
+
+// Required params
+params.reads  = false
+params.genome = false
+params.target = false
+params.bait   = false
+
 // Check required arguments
 if (!params.reads || !params.genome || !params.target || !params.bait) {
   msg = "Parameters '--reads', '--genome', '--bait' and '--target' are required to run."
@@ -81,6 +69,21 @@ bait   = file(params.bait)
 if (!target.exists() || !bait.exists())
   exit(1, "Could not find target intervals at `${target}` or bait at `${bait}`.")
 
+// Custom trimming options
+params.length = 36
+params.leading = 10
+params.trailing = 10
+params.slidingSize = 5
+params.slidingCutoff = 15
+
+// GATK parameters
+params.dbsnp  = false
+params.mills  = false
+params.kgp3   = false
+params.omni   = false
+params.hapmap = false
+params.axiom  = false
+
 // Parse GATK params
 ref_dir = genome.getParent()
 ref_ver = ref_dir.getBaseName()
@@ -88,6 +91,7 @@ if (!params.dbsnp)
   dbsnp = file("${ref_dir}/dbsnp_138.${ref_ver}.vcf.gz")
 else 
   dbsnp = file(params.dbsnp)
+
 if (!params.mills) 
   mills = file("${ref_dir}/Mills_and_1000G_gold_standard.indels.${ref_ver}.vcf.gz")
 else 
@@ -98,6 +102,20 @@ if (!params.kgp3)
 else
   kgp3 = file(params.kgp3)
 
+if (!params.hapmap)
+  hapmap = file("${ref_dir}/hapmap_3.3.${ref_ver}.vcf.gz")
+else
+  hapmap = file(params.hapmap)
+
+if (!params.omni)
+  omni = file("${ref_dir}/1000G_omni2.5.${ref_ver}.vcf.gz")
+else
+  omni = file(params.omni)
+
+if (!params.axiom)
+  axiom = file("${ref_dir}/Axiom_Exome_Plus.genotypes.all_populations.poly.vcf.gz")
+else
+  axiom = file(params.axiom)
 
 // Header log info
 log.info "====================================="
@@ -111,7 +129,10 @@ summary['Target Baits']    = bait
 summary['Mutation References'] = ""
 summary['dbSNP']           = dbsnp
 summary['Mills Indels']    = mills
+summary['Hapmap']          = hapmap
 summary['1000G phase 3']   = kgp3
+summary['1000G Omni']      = omni
+summary['Axiom Exome Plus'] = axiom
 summary['Trimming Options'] = ""
 summary['Trim Min Lenght'] = params.length
 summary['Trim Leading']    = params.leading
@@ -127,7 +148,10 @@ log.info "====================================="
 Channel
   .fromFilePairs( params.reads, size: 2)
   .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}.\n" }
-  .into { reads_trimming; reads_fastqc }
+  .into { reads_trimming; reads_fastqc; reads_count }
+
+sample_count = 0
+reads_count.subscribe { sample_count += 1 }
 
 // Step 1. FastQC
 process fastqc {
@@ -351,10 +375,155 @@ process genotype_call {
   gatk -T GenotypeGVCFs \
     -R ${genome} \
     -L ${target} \
-    -o ${params.project}.vcf \
+    -o ${params.project}.raw.vcf \
     -D ${dbsnp} \
     ${vars}
   """ 
+}
+
+// Step 5.1 Separate SNPs and INDELS
+process selectVariant {
+  input:
+  file(raw_vcf) from sample_variant
+
+  output:
+  set file("*snps.vcf"), file("*snps.vcf.idx") into raw_snps
+  set file("*indels.vcf"), file("*indels.vcf.idx") into raw_indels
+
+  script:
+  """
+  gatk -T SelectVariants \
+    -R ${genome} \
+    --variant ${raw_vcf} \
+    --out ${params.project}_snps.vcf \
+    --selectTypeToInclude SNP
+  gatk -T SelectVariants \
+    -R ${genome} \
+    --variant ${raw_vcf} \
+    --out ${params.project}_indels.vcf \
+    --selectTypeToInclude INDEL \
+    --selectTypeToInclude MIXED \
+    --selectTypeToInclude MNP
+  """
+}
+
+// Step 5.2 Recalibrate SNPs
+process recalibrateSNPs {
+  publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
+
+  input:
+  set file(raw_snp), file(raw_snp_idx) from raw_snps
+
+  output:
+  set file("*_snps.recal.vcf"), file("*_snps.recal.vcf.idx") into recalibrated_snps
+
+  script:
+  inbreed = (sample_count > 10) ? "-an InbreedingCoeff": ""
+  """
+  gatk -T VariantRecalibrator \
+    -R ${genome} \
+    -input ${raw_snp} \
+    -resource:hapmap,known=false,training=true,truth=true,prior=15.0 ${hapmap} \
+    -resource:omni,known=false,training=true,truth=true,prior=12.0 ${omni} \
+    -resource:1000G,known=false,training=true,truth=false,prior=10.0 ${kgp3} \
+    -resource:dbsnp,known=true,training=false,truth=false,prior=5.0 ${dbsnp} \
+    -mode SNP \
+    -an QD -an FS -an SOR -an MQ -an MQRankSum \
+    -an ReadPosRankSum ${inbreed} \
+    -allPoly \
+    --maxGaussians 6 \
+    -tranche 100.0 -tranche 99.9 -tranche 99.5 -tranche 99.0 -tranche 95.0 \
+    -recalFile ${params.project}_snps.recal \
+    -tranchesFile ${params.project}_snps.tranches \
+    --num_threads ${params.cpus}
+  
+  gatk -T ApplyRecalibration \
+    -R ${genome} \
+    -L ${target} \
+    -input ${raw_snp} \
+    -recalFile ${params.project}_snps.recal \
+    -tranchesFile ${params.project}_snps.tranches \
+    -o ${params.project}_snps.recal.vcf \
+    -ts_filter_level 99.5 \
+    -mode SNP
+  """
+}
+
+// Step 5.3 Recalibrate INDELS
+process recalibrateIndels {
+  publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
+
+  input:
+  set file(raw_indel), file(raw_indel_idx) from raw_indels
+
+  output:
+  set file("*_indels.flt.vcf"), file("*_indels.flt.vcf.idx") into recalibrated_indels
+
+  script:
+  inbreed = (sample_count > 10) ? "-an InbreedingCoeff": ""
+  """
+  gatk -T VariantFiltration \
+        -R ${genome} \
+        --variant ${raw_indel} \
+        --out ${params.project}_indels.flt.vcf \
+        --filterName GATKStandardQD \
+        --filterExpression "QD < 2.0" \
+        --filterName GATKStandardReadPosRankSum \
+        --filterExpression "ReadPosRankSum < -20.0" \
+        --filterName GATKStandardFS \
+        --filterExpression "FS > 200.0"
+  ## 
+  ## gatk -T VariantRecalibrator \
+  ##   -R ${genome} \
+  ##   -input ${raw_indel} \
+  ##   -resource:mills,known=false,training=true,truth=true,prior=12.0 ${mills} \
+  ##   -resource:axiomPoly,known=false,training=true,truth=true,prior=10.0 ${axiom} \
+  ##   -resource:dbsnp150,known=true,training=false,truth=false,prior=2.0 ${dbsnp} \
+  ##   -mode INDEL \
+  ##   -an QD -an FS -an SOR -an MQRankSum \
+  ##   -an ReadPosRankSum ${inbreed} \
+  ##   -allPoly \
+  ##   --maxGaussians 4 \
+  ##   -tranche 100.0 -tranche 99.5 -tranche 99.0 -tranche 95.0 -tranche 90.0 \
+  ##   -recalFile ${params.project}_indels.recal \
+  ##   -tranchesFile ${params.project}_indels.tranches \
+  ##   --num_threads ${params.cpus}
+  ## 
+  ## gatk -T ApplyRecalibration \
+  ##   -R ${genome} \
+  ##   -L ${target} \
+  ##   -input ${raw_indel} \
+  ##   -recalFile ${params.project}_indels.recal \
+  ##   -tranchesFile ${params.project}_indels.tranches \
+  ##   -o ${params.project}_indels.recal.vcf \
+  ##   -ts_filter_level 95.0 \
+  ##   -mode SNP
+  """
+}
+
+// Step 5.4 Merge Recalibrated
+process mergeVariant {
+  echo true
+
+  publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
+
+  input:
+  set file(snp), file(snp_idx) from recalibrated_snps
+  set file(indel), file(indel_idx) from recalibrated_indels
+
+  output:
+  set file("*.vcf"), file("*.vcf.idx") into variants
+
+  script:
+  """
+  gatk -T CombineVariants \
+    -R ${genome} \
+    -o ${params.project}.final.vcf \
+    --variant:snps ${snp} \
+    --variant:indels ${indel} \
+    -genotypeMergeOptions PRIORITIZE \
+    -priority snps,indels 2>&1
+  """
 }
 
 // Step 6. MultiQC
