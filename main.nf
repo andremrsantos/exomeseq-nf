@@ -7,31 +7,36 @@ def helpMessage() {
   =========================================
   Usage:
   The typical command for running the pipeline is as follows:
-  nextflow run exomeseq/main.nf \
-    --reads '*.fastq.gz' \
-    --genome human_g1k_v37.fasta
-  Mandatory arguments:
+  nextflow run exomeseq/main.nf --reads '*.fastq.gz' --genome human_g1k_v37.fasta
+
+  Mandatory options:
     --reads         Path to input data (must be surrounded with quotes).
     --genome        Genome reference fasta path
     --target        Targeted regions interval
     --bait          Bait regions interval
-  Trimming options
-    --length        Minimal read lenght. Default: ${params.length}.
-    --leading       Cut bases off the start of a read whose quality is below. 
-                    Default: ${params.leading}.
-    --trailing      Cut bases off the end of a read whose quality is below. 
-                    Default: ${params.trailing}.
-    --slidingSize   In a slidding window cutoff, sets window size.
-                    Default: ${params.slidingSize}.
-    --slidingCutoff In a slidding window cutoff, sets window quality threshold.
-                    Default: ${params.slidindCutoff}.
+  Reference Databases:
+    --snpEff        snpEff genome version [default: GRCh37.75]
+    --dbsnp         dbSNP reference database [default: b37/dbSNP_150.b37.vcf.gz]
+    --mills         Mills indels gold standard [default: b37/Mills_and_1000G_gold_standard.indels.b37.vcf.gz]
+    --kgp3          1000 Genomes High Confidence SNPS [default: b37/1000G_phase1.snps.high_confidence.b37.vcf.gz]
+    --omni          1000 Genomes Omni Reference set [default: b37/1000G_omni2.5.b37.vcf.gz]
+    --hapmap        HapMap Reference set [default: b37/hapmap_3.3.b37.vcf.gz]
+    --axiom         Axiom Exome Reference [default: b37/Axiom_Exome_Plus.genotypes.all_populations.poly.vcf.gz]
+    --dbnsfp        dbNSFP Annotation Database [default: dbnsfp/dbNSFP2.9.3.txt.gz]
+    --clinvar       Clinvar Annotation Database [default: clinvar/hg19/clinvar_20171029.vcf.gz]
+  Trimming options:
+    --length        Minimal read lenght. [default: ${params.length}]
+    --leading       Cut bases off the start of a read whose quality is below. [default: ${params.leading}]
+    --trailing      Cut bases off the end of a read whose quality is below. [default: ${params.trailing}]
+    --slidingSize   In a slidding window cutoff, sets window size. [default: ${params.slidingSize}]
+    --slidingCutoff In a slidding window cutoff, sets window quality threshold. [default: ${params.slidindCutoff}]
   Other options:
-    --help         Print this help text
-    --project      Name of the running project
-    --cpus         The number of cpus to reserve for multithread jobs
-    --memory       The memory size to researve
-    --outdir       The output directory where the results will be saved
-    --time         The maximum execution time
+    --help          Print this help text
+    --project       Name of the running project
+    --cpus          The number of cpus to reserve for multithread jobs
+    --memory        The memory size to researve
+    --outdir        The output directory where the results will be saved
+    --time          The maximum execution time
   """.stripIndent()
 }
 
@@ -77,12 +82,12 @@ params.slidingSize = 5
 params.slidingCutoff = 15
 
 // GATK parameters
-params.dbsnp  = false
-params.mills  = false
-params.kgp3   = false
-params.omni   = false
+params.dbsnp = false
+params.mills = false
+params.kgp3 = false
+params.omni = false
 params.hapmap = false
-params.axiom  = false
+params.axiom = false
 params.dbnsfp = false
 params.clinvar = false
 
@@ -90,7 +95,7 @@ params.clinvar = false
 ref_dir = genome.getParent()
 ref_ver = ref_dir.getBaseName()
 if (!params.dbsnp) 
-  dbsnp = file("${ref_dir}/dbsnp_138.${ref_ver}.vcf.gz")
+  dbsnp = file("${ref_dir}/dbsnp_150.${ref_ver}.vcf.gz")
 else 
   dbsnp = file(params.dbsnp)
 
