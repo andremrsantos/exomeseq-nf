@@ -15,6 +15,7 @@ def helpMessage() {
     --target        Targeted regions interval
     --bait          Bait regions interval
   Reference Databases:
+    --genomeVersion Reference Genome versions. Supports either b37, or hg19. [default: b37]     
     --snpEff        snpEff genome version [default: GRCh37.75]
     --dbsnp         dbSNP reference database [default: b37/dbSNP_150.b37.vcf.gz]
     --mills         Mills indels gold standard [default: b37/Mills_and_1000G_gold_standard.indels.b37.vcf.gz]
@@ -44,6 +45,17 @@ def required(String... args) {
   args.each { arg ->
     if (!params[arg]) exit(1, "The required parameter --${arg} is missing.")
   }
+}
+
+def fetchReference(String arg) {
+  ref = params.references[params.genomeVersion]
+
+  if (params[arg]) 
+    return(file(params[arg]))
+  else if (ref && ref[arg])
+    return(file(ref[arg]))
+  else
+    return false
 }
 
 // Pipeline version
@@ -83,6 +95,7 @@ params.slidingSize = 5
 params.slidingCutoff = 15
 
 // GATK parameters
+params.genomeVersion = "b37"
 params.dbsnp = false
 params.mills = false
 params.kgp3 = false
@@ -93,47 +106,14 @@ params.dbnsfp = false
 params.clinvar = false
 
 // Parse GATK params
-ref_dir = genome.getParent()
-ref_ver = ref_dir.getBaseName()
-if (!params.dbsnp) 
-  dbsnp = file("${ref_dir}/dbsnp_150.${ref_ver}.vcf.gz")
-else 
-  dbsnp = file(params.dbsnp)
-
-if (!params.mills) 
-  mills = file("${ref_dir}/Mills_and_1000G_gold_standard.indels.${ref_ver}.vcf.gz")
-else 
-  mills = file(params.mills)
-
-if (!params.kgp3) 
-  kgp3 = file("${ref_dir}/1000G_phase3_v4_20130502.sites.vcf.gz")
-else
-  kgp3 = file(params.kgp3)
-
-if (!params.hapmap)
-  hapmap = file("${ref_dir}/hapmap_3.3.${ref_ver}.vcf.gz")
-else
-  hapmap = file(params.hapmap)
-
-if (!params.omni)
-  omni = file("${ref_dir}/1000G_omni2.5.${ref_ver}.vcf.gz")
-else
-  omni = file(params.omni)
-
-if (!params.axiom)
-  axiom = file("${ref_dir}/Axiom_Exome_Plus.genotypes.all_populations.poly.vcf.gz")
-else
-  axiom = file(params.axiom)
-
-if (!params.dbnsfp)
-  dbnsfp = file("/data/rsc/dbnsfp/dbNSFP2.9.3.txt.gz")
-else
-  dbnsfp = file(params.dbnsfp)
-
-if (!params.clinvar)
-  clinvar = file("/data/rsc/clinvar/hg19/clinvar_20171029.vcf.gz")
-else
-  clinvar = file(params.clinvar)
+dbsnp = fetchReference("dbsnp")
+mills = fetchReference("mills")
+kgp3 = fetchReference("kgp3")
+omni = fetchReference("omni")
+hapmap = fetchReference("hapmap")
+axiom = fetchReference("axiom")
+dbnsfp = fetchReference("dbnsfp")
+clinvar = fetchReference("clinvar")
 
 // Header log info
 log.info "====================================="
