@@ -96,6 +96,7 @@ params.slidingCutoff = 15
 
 // GATK parameters
 params.genomeVersion = "b37"
+params.snpEff = false
 params.dbsnp = false
 params.mills = false
 params.kgp3 = false
@@ -106,6 +107,7 @@ params.dbnsfp = false
 params.clinvar = false
 
 // Parse GATK params
+snpeff = fetchReference("snpEff")
 dbsnp = fetchReference("dbsnp")
 mills = fetchReference("mills")
 kgp3 = fetchReference("kgp3")
@@ -124,7 +126,7 @@ summary['Reads']           = params.reads
 summary['Genome']          = genome
 summary['Target Interval'] = target
 summary['Target Baits']    = bait
-summary['Mutation References'] = ""
+summary['References'] = ""
 summary['dbSNP']           = dbsnp
 summary['Mills Indels']    = mills
 summary['Hapmap']          = hapmap
@@ -133,13 +135,13 @@ summary['1000G Omni']      = omni
 summary['Axiom Exome Plus'] = axiom
 summary['dbNSFP']          = dbnsfp
 summary['clinvar']         = clinvar
-summary['Trimming Options'] = ""
+summary['Trimming'] = ""
 summary['Trim Min Lenght'] = params.length
 summary['Trim Leading']    = params.leading
 summary['Trim Trailing']   = params.trailing
 summary["Trim Sliding Window Size"]   = params.slidingSize
 summary["Trim Sliding Window Cutoff"] = params.slidingCutoff
-summary["Global Options"]  = ""
+summary["Global"]  = ""
 summary['Output dir']      = params.outdir
 log.info summary.collect { k,v -> "${k.padRight(30)}: $v" }.join("\n")
 log.info "====================================="
@@ -147,7 +149,7 @@ log.info "====================================="
 // Generate reads pairs
 Channel
   .fromFilePairs( params.reads, size: 2)
-  .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}.\n" }
+  .ifEmpty { exit(1, "Cannot find any reads matching: ${params.reads}.\n") }
   .into { reads_trimming; reads_fastqc; reads_count }
 
 sample_count = 0
@@ -175,11 +177,7 @@ process fastqc {
 // Step 2. Trimmomatic
 process trimomatic {
   publishDir "${params.outdir}", mode: "copy", overwrite: false,
-    saveAs: { filename -> 
-      if (filename.indexOf("trimmomatic.log") > 0) "reports/$filename"
-      else if (filename.indexOf("fq.gz") > 0) "seq/$filename"
-      else ""
-    }
+    saveAs: { filename -> (filename.indexOf("log") > 0)? "reports/$filename" : "seq/$filename"}
 
   input:
   set val(name), file(reads) from reads_trimming
@@ -191,14 +189,11 @@ process trimomatic {
   script:
   lead   = params.leading > 0  ? "LEADING:${params.leading}" : ""
   trail  = params.trailing > 0 ? "TRAILING:${params.trailing}" : ""
-  if (params.slidingCutoff > 0 && params.slidingSize > 0) 
-    slide  = "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" 
-  else 
-    slide  = ""
+  slide  = (params.slidingCutoff > 0 && params.slidingSize > 0) ? "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" : ""
   minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
   """
   trimmomatic PE -threads ${params.cpus} \
-    $reads \
+    ${reads} \
     ${name}_R1.trim.fq.gz ${name}_R1.unpaired.fq.gz \
     ${name}_R2.trim.fq.gz ${name}_R2.unpaired.fq.gz \
     $lead $trail $slide $minlen \
@@ -218,7 +213,7 @@ process bwamem {
 
   script:
   """
-  bwa mem -M -t ${params.cpus} \
+  bwa mem -t ${params.cpus} \
     -R \"@RG\tID:${name}\tSM:${name}\tPL:illumina\" \
     ${genome} ${reads} | \
     sambamba view -S -f bam /dev/stdin | \
@@ -229,9 +224,7 @@ process bwamem {
 // Step 3.2 Picard Mark Duplicates
 process markdup {
   publishDir "${params.outdir}", mode: "copy", overwrite: false,
-    saveAs: { fn -> 
-      fn.indexOf("metrics") > 0 ? "reports/$fn" : "alignment/$fn"
-    }
+    saveAs: { fn -> fn.indexOf("metrics") > 0 ? "reports/$fn" : "alignment/$fn" }
 
   input:
   set val(name), file(bam), file(bam_idx) from markdup_alignment
@@ -463,10 +456,11 @@ process recalibrateIndels {
   set file(raw_indel), file(raw_indel_idx) from raw_indels
 
   output:
-  set file("*_indels.flt.vcf"), file("*_indels.flt.vcf.idx") into recalibrated_indels
+  set file("*_indels.{recal,flt}.vcf"), file("*_indels.{recal,flt}.vcf.idx") into recalibrated_indels
 
   script:
-  inbreed = (sample_count > 10) ? "-an InbreedingCoeff": ""
+  inbreed  = (sample_count > 10) ? "-an InbreedingCoeff": ""
+  axiomrsc = (axiom == "") ? "-resource:axiomPoly,known=false,training=true,truth=true,prior=10.0 ${axiom}" : ""
   """
   COUNT=\$(cat ${raw_indel} | grep -v '#' | wc -l | awk '{ print \$1 }')
   if [ \$COUNT -gt 10000 ]; then
@@ -474,7 +468,7 @@ process recalibrateIndels {
       -R ${genome} \
       -input ${raw_indel} \
       -resource:mills,known=false,training=true,truth=true,prior=12.0 ${mills} \
-      -resource:axiomPoly,known=false,training=true,truth=true,prior=10.0 ${axiom} \
+      ${axiomrsc} \
       -resource:dbsnp150,known=true,training=false,truth=false,prior=2.0 ${dbsnp} \
       -mode INDEL \
       -an QD -an FS -an SOR -an MQRankSum \
@@ -546,14 +540,13 @@ process snpeff {
 
   script:
   """
-  snpEff ann GRCh37.75 \
-      -stats ${params.project}.snpEff.html \
-      -csvStats ${params.project}.snpEff.csv \
-      -q -canon -lof ${var} | \
-    snpSift varType - | \
-    snpSift annotate ${clinvar} - | \
-    snpSift dbnsfp -v -db ${dbnsfp} - \
-    > ${params.project}.ann.vcf
+  snpEff ann ${snpeff} \
+    -stats ${params.project}.snpEff.html \
+    -csvStats ${params.project}.snpEff.csv \
+    -q -canon -lof ${var} | \
+  snpSift varType - | \
+  snpSift annotate ${clinvar} - | \
+  snpSift dbnsfp -v -db ${dbnsfp} - > ${params.project}.ann.vcf
   """
 }
 
