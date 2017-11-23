@@ -83,6 +83,8 @@ params.kgp3   = false
 params.omni   = false
 params.hapmap = false
 params.axiom  = false
+params.dbnsfp = false
+params.clinvar = false
 
 // Parse GATK params
 ref_dir = genome.getParent()
@@ -117,6 +119,16 @@ if (!params.axiom)
 else
   axiom = file(params.axiom)
 
+if (!params.dbnsfp)
+  dbnsfp = file("/data/rsc/dbnsfp/dbNSFP2.9.3.txt.gz")
+else
+  dbnsfp = file(params.dbnsfp)
+
+if (!params.clinvar)
+  clinvar = file("/data/rsc/clinvar/hg19/clinvar_20171029.vcf.gz")
+else
+  clinvar = file(params.clinvar)
+
 // Header log info
 log.info "====================================="
 log.info " Exome-Seq: Best Practice v${version}"
@@ -133,6 +145,8 @@ summary['Hapmap']          = hapmap
 summary['1000G phase 3']   = kgp3
 summary['1000G Omni']      = omni
 summary['Axiom Exome Plus'] = axiom
+summary['dbNSFP']          = dbnsfp
+summary['clinvar']         = clinvar
 summary['Trimming Options'] = ""
 summary['Trim Min Lenght'] = params.length
 summary['Trim Leading']    = params.leading
@@ -409,6 +423,9 @@ process selectVariant {
 
 // Step 5.2 Recalibrate SNPs
 process recalibrateSNPs {
+  errorStrategy 'retry'
+  maxRetries 3
+  
   publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
 
   input:
@@ -451,6 +468,9 @@ process recalibrateSNPs {
 
 // Step 5.3 Recalibrate INDELS
 process recalibrateIndels {
+  errorStrategy 'retry'
+  maxRetries 3
+
   publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
 
   input:
@@ -462,49 +482,49 @@ process recalibrateIndels {
   script:
   inbreed = (sample_count > 10) ? "-an InbreedingCoeff": ""
   """
-  gatk -T VariantFiltration \
-        -R ${genome} \
-        --variant ${raw_indel} \
-        --out ${params.project}_indels.flt.vcf \
-        --filterName GATKStandardQD \
-        --filterExpression "QD < 2.0" \
-        --filterName GATKStandardReadPosRankSum \
-        --filterExpression "ReadPosRankSum < -20.0" \
-        --filterName GATKStandardFS \
-        --filterExpression "FS > 200.0"
-  ## 
-  ## gatk -T VariantRecalibrator \
-  ##   -R ${genome} \
-  ##   -input ${raw_indel} \
-  ##   -resource:mills,known=false,training=true,truth=true,prior=12.0 ${mills} \
-  ##   -resource:axiomPoly,known=false,training=true,truth=true,prior=10.0 ${axiom} \
-  ##   -resource:dbsnp150,known=true,training=false,truth=false,prior=2.0 ${dbsnp} \
-  ##   -mode INDEL \
-  ##   -an QD -an FS -an SOR -an MQRankSum \
-  ##   -an ReadPosRankSum ${inbreed} \
-  ##   -allPoly \
-  ##   --maxGaussians 4 \
-  ##   -tranche 100.0 -tranche 99.5 -tranche 99.0 -tranche 95.0 -tranche 90.0 \
-  ##   -recalFile ${params.project}_indels.recal \
-  ##   -tranchesFile ${params.project}_indels.tranches \
-  ##   --num_threads ${params.cpus}
-  ## 
-  ## gatk -T ApplyRecalibration \
-  ##   -R ${genome} \
-  ##   -L ${target} \
-  ##   -input ${raw_indel} \
-  ##   -recalFile ${params.project}_indels.recal \
-  ##   -tranchesFile ${params.project}_indels.tranches \
-  ##   -o ${params.project}_indels.recal.vcf \
-  ##   -ts_filter_level 95.0 \
-  ##   -mode SNP
+  COUNT=\$(cat ${raw_indel} | grep -v '#' | wc -l | awk '{ print \$1 }')
+  if [ \$COUNT -gt 10000 ]; then
+    gatk -T VariantRecalibrator \
+      -R ${genome} \
+      -input ${raw_indel} \
+      -resource:mills,known=false,training=true,truth=true,prior=12.0 ${mills} \
+      -resource:axiomPoly,known=false,training=true,truth=true,prior=10.0 ${axiom} \
+      -resource:dbsnp150,known=true,training=false,truth=false,prior=2.0 ${dbsnp} \
+      -mode INDEL \
+      -an QD -an FS -an SOR -an MQRankSum \
+      -an ReadPosRankSum ${inbreed} \
+      -allPoly \
+      --maxGaussians 4 \
+      -tranche 100.0 -tranche 99.5 -tranche 99.0 -tranche 95.0 -tranche 90.0 \
+      -recalFile ${params.project}_indels.recal \
+      -tranchesFile ${params.project}_indels.tranches \
+      --num_threads ${params.cpus}
+    gatk -T ApplyRecalibration \
+      -R ${genome} \
+      -L ${target} \
+      -input ${raw_indel} \
+      -recalFile ${params.project}_indels.recal \
+      -tranchesFile ${params.project}_indels.tranches \
+      -o ${params.project}_indels.recal.vcf \
+      -ts_filter_level 95.0 \
+      -mode SNP
+  else
+    gatk -T VariantFiltration \
+      -R ${genome} \
+      --variant ${raw_indel} \
+      --out ${params.project}_indels.flt.vcf \
+      --filterName GATKStandardQD \
+      --filterExpression "QD < 2.0" \
+      --filterName GATKStandardReadPosRankSum \
+      --filterExpression "ReadPosRankSum < -20.0" \
+      --filterName GATKStandardFS \
+      --filterExpression "FS > 200.0"
+  fi
   """
 }
 
 // Step 5.4 Merge Recalibrated
 process mergeVariant {
-  echo true
-
   publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
 
   input:
@@ -522,7 +542,32 @@ process mergeVariant {
     --variant:snps ${snp} \
     --variant:indels ${indel} \
     -genotypeMergeOptions PRIORITIZE \
-    -priority snps,indels 2>&1
+    -priority snps,indels
+  """
+}
+
+// Step 5.5 SnpEff
+process snpeff {
+  publishDir "${params.outdir}", mode: "copy", overwrite: false,
+    saveAs: { fn -> (fn.indexOf("snpEff") > 0) ? "report/$fn" : "var/$fn" }
+
+  input:
+  set file(var), file(var_idx) from variants
+
+  output:
+  file("*ann.vcf") into annotated_variants
+  file("*snpEff.{csv,html}") into snpeff_stats
+
+  script:
+  """
+  snpEff ann GRCh37.75 \
+      -stats ${params.project}.snpEff.html \
+      -csvStats ${params.project}.snpEff.csv \
+      -q -canon -lof ${var} | \
+    snpSift varType - | \
+    snpSift annotate ${clinvar} - | \
+    snpSift dbnsfp -v -db ${dbnsfp} - \
+    > ${params.project}.ann.vcf
   """
 }
 
@@ -537,6 +582,7 @@ process multiqc {
   file (trim)    from trimmomatic_results.collect()
   file (markdup) from markdup_results.collect()
   file (metrics) from hsmetric_results.collect()
+  file (snpeff)  from snpeff_stats.collect()
 
   output:
   file "*multiqc_report.html" into multiqc_report
