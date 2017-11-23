@@ -40,6 +40,12 @@ def helpMessage() {
   """.stripIndent()
 }
 
+def required(String... args) {
+  args.each { arg ->
+    if (!params[arg]) exit(1, "The required parameter --${arg} is missing.")
+  }
+}
+
 // Pipeline version
 version = "0.1.0"
 
@@ -56,20 +62,15 @@ params.multiqc_config = "$baseDir/resource/multiqc_config.yaml"
 multiqc_config = file(params.multiqc_config)
 
 // Required params
-params.reads  = false
+params.reads = false
 params.genome = false
 params.target = false
-params.bait   = false
+params.bait = false
 
-// Check required arguments
-if (!params.reads || !params.genome || !params.target || !params.bait) {
-  msg = "Parameters '--reads', '--genome', '--bait' and '--target' are required to run."
-  exit(1, msg)
-}
+required("reads", "genome", "target", "bait")
 genome = file(params.genome)
 target = file(params.target)
-bait   = file(params.bait)
-
+bait = file(params.bait)
 // Exit if not find target
 if (!target.exists() || !bait.exists())
   exit(1, "Could not find target intervals at `${target}` or bait at `${bait}`.")
