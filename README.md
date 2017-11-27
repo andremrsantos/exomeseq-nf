@@ -39,8 +39,10 @@ which takes a set of FASTQ files and performs:
     2. **Sambamba** Mark Duplicates
     3. **Samtools** Flagstats and Stats
     4. **GATK Base Recalibration**
+    5. **Picard** Alignment, InsertSize, and Hs Metrics
 4.  **GATK** Variant Calling
     1. **Haplotype Caller**
     2. **Call Genotype**
 5.  **GATK** Variant Recalibration
-6.  MultiQC
+    1. Separate SNPs and Indels
+    2. Recali
