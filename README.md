@@ -45,4 +45,8 @@ which takes a set of FASTQ files and performs:
     2. **Call Genotype**
 5.  **GATK** Variant Recalibration
     1. Separate SNPs and Indels
-    2. Recali
+    2. Recalibrate SNPs
+    3. Recalibrate Indels
+    4. Merge Recalibrate SNPs
+6.  **SnpEff** Variant Annotation
+7.  MultiQC
