@@ -19,7 +19,8 @@ def helpMessage() {
     --snpEff        snpEff genome version [default: GRCh37.75]
     --dbsnp         dbSNP reference database [default: b37/dbSNP_150.b37.vcf.gz]
     --mills         Mills indels gold standard [default: b37/Mills_and_1000G_gold_standard.indels.b37.vcf.gz]
-    --kgp3          1000 Genomes High Confidence SNPS [default: b37/1000G_phase1.snps.high_confidence.b37.vcf.gz]
+    --kgsnp         1000 Genomes High Confidence SNPS [default: b37/1000G_phase1.snps.high_confidence.b37.vcf.gz]
+    --kgindel       1000 Genomes High Confidence Indels [default: b37/1000G_phase1.indels.b37.vcf.gz]
     --omni          1000 Genomes Omni Reference set [default: b37/1000G_omni2.5.b37.vcf.gz]
     --hapmap        HapMap Reference set [default: b37/hapmap_3.3.b37.vcf.gz]
     --axiom         Axiom Exome Reference [default: b37/Axiom_Exome_Plus.genotypes.all_populations.poly.vcf.gz]
@@ -53,13 +54,13 @@ def fetchReference(String arg) {
   if (params[arg]) 
     return(file(params[arg]))
   else if (ref && ref[arg])
-    return(file(ref[arg]))
+    return(ref[arg])
   else
     return false
 }
 
 // Pipeline version
-version = "0.1.0"
+version = "1.0.0"
 
 // Show help message
 params.help = false
@@ -99,7 +100,8 @@ params.genomeVersion = "b37"
 params.snpEff = false
 params.dbsnp = false
 params.mills = false
-params.kgp3 = false
+params.kgsnp = false
+params.kgindel = false
 params.omni = false
 params.hapmap = false
 params.axiom = false
@@ -108,14 +110,15 @@ params.clinvar = false
 
 // Parse GATK params
 snpeff = fetchReference("snpEff")
-dbsnp = fetchReference("dbsnp")
-mills = fetchReference("mills")
-kgp3 = fetchReference("kgp3")
-omni = fetchReference("omni")
-hapmap = fetchReference("hapmap")
-axiom = fetchReference("axiom")
-dbnsfp = fetchReference("dbnsfp")
-clinvar = fetchReference("clinvar")
+dbsnp = file(fetchReference("dbsnp"))
+mills = file(fetchReference("mills"))
+kgsnp = file(fetchReference("kgsnp"))
+kgindel = file(fetchReference("kgindel"))
+omni = file(fetchReference("omni"))
+hapmap = file(fetchReference("hapmap"))
+axiom = file(fetchReference("axiom"))
+dbnsfp = file(fetchReference("dbnsfp"))
+clinvar = file(fetchReference("clinvar"))
 
 // Header log info
 log.info "====================================="
@@ -130,7 +133,8 @@ summary['References'] = ""
 summary['dbSNP']           = dbsnp
 summary['Mills Indels']    = mills
 summary['Hapmap']          = hapmap
-summary['1000G phase 3']   = kgp3
+summary['1000G phase 3 Snps'] = kgsnp
+summary['1000G phase 3 INDEL'] = kgindel
 summary['1000G Omni']      = omni
 summary['Axiom Exome Plus'] = axiom
 summary['dbNSFP']          = dbnsfp
@@ -261,7 +265,8 @@ process base_recalibration {
     -L ${target} \
     -I ${bam} \
     -o ${name}.recal.table \
-    -knownSites ${dbsnp} -knownSites ${mills} -knownSites ${kgp3} \
+    -knownSites ${dbsnp} -knownSites ${mills} \
+    -knownSites ${kgsnp} -knownSites ${kgindel} \
     -nct ${params.cpus}
   gatk -T PrintReads \
     -R ${genome} \
@@ -421,7 +426,7 @@ process recalibrateSNPs {
     -input ${raw_snp} \
     -resource:hapmap,known=false,training=true,truth=true,prior=15.0 ${hapmap} \
     -resource:omni,known=false,training=true,truth=true,prior=12.0 ${omni} \
-    -resource:1000G,known=false,training=true,truth=false,prior=10.0 ${kgp3} \
+    -resource:1000G,known=false,training=true,truth=false,prior=10.0 ${kgsnp} \
     -resource:dbsnp,known=true,training=false,truth=false,prior=5.0 ${dbsnp} \
     -mode SNP \
     -an QD -an FS -an SOR -an MQ -an MQRankSum \
@@ -469,6 +474,7 @@ process recalibrateIndels {
       -input ${raw_indel} \
       -resource:mills,known=false,training=true,truth=true,prior=12.0 ${mills} \
       ${axiomrsc} \
+      -resource:mills,known=false,training=true,truth=true,prior=8.0 ${kgindel} \
       -resource:dbsnp150,known=true,training=false,truth=false,prior=2.0 ${dbsnp} \
       -mode INDEL \
       -an QD -an FS -an SOR -an MQRankSum \
