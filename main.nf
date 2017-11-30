@@ -99,6 +99,7 @@ params.slidingCutoff = 15
 params.genomeVersion = "b37"
 params.snpEff = false
 params.dbsnp = false
+params.dbsnp_all = false
 params.mills = false
 params.kgsnp = false
 params.kgindel = false
@@ -111,6 +112,7 @@ params.clinvar = false
 // Parse GATK params
 snpeff = fetchReference("snpEff")
 dbsnp = file(fetchReference("dbsnp"))
+dbsnp_all = file(fetchReference("dbsnp_all"))
 mills = file(fetchReference("mills"))
 kgsnp = file(fetchReference("kgsnp"))
 kgindel = file(fetchReference("kgindel"))
@@ -347,7 +349,7 @@ process haplotype_call {
     -I ${bam} \
     -L ${target} \
     -o ${name}.gvcf \
-    --dbsnp ${dbsnp} \
+    --dbsnp ${dbsnp_all} \
     -variant_index_type LINEAR \
     -variant_index_parameter 128000 \
     --emitRefConfidence GVCF \
@@ -374,7 +376,7 @@ process genotype_call {
     -R ${genome} \
     -L ${target} \
     -o ${params.project}.raw.vcf \
-    -D ${dbsnp} \
+    -D ${dbsnp_all} \
     ${vars}
   """ 
 }
