@@ -183,7 +183,7 @@ process fastqc {
 
 // Step 2. Trimmomatic
 process trimomatic {
-  publishDir "${params.outdir}", mode: "copy", overwrite: false,
+  publishDir "${params.outdir}", mode: "copy",
     saveAs: { filename -> (filename.indexOf("log") > 0)? "reports/$filename" : "seq/$filename"}
 
   input:
@@ -228,7 +228,7 @@ process bwamem {
 
 // Step 3.2 Picard Mark Duplicates
 process markdup {
-  publishDir "${params.outdir}/reports", mode: "copy", overwrite: false,
+  publishDir "${params.outdir}/reports", mode: "copy",
     saveAs: { fn -> fn.indexOf("metrics") > 0 ? fn : "" }
 
   input:
@@ -251,7 +251,7 @@ process markdup {
 
 // Step 3.3 Base Recalibration
 process base_recalibration {
-  publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
+  publishDir "${params.outdir}/alignment", mode: "copy"
 
   input:
   set val(name), file(bam), file(bam_idx) from recal_alignment
@@ -333,7 +333,7 @@ process hs_metrics {
 
 // Step 4.1 Haplotype Caller
 process haplotype_call {
-  publishDir "${params.outdir}/var/gvcf", mode: "copy", overwrite: false
+  publishDir "${params.outdir}/var/gvcf", mode: "copy"
 
   input:
   set val(name), file(bam), file(bam_idx) from align_varcall
@@ -360,7 +360,7 @@ process haplotype_call {
 
 // Step 4.2 genotype call
 process genotype_call {
-  publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
+  publishDir "${params.outdir}/var/", mode: "copy"
 
   input:
   file (gvcfs) from varcall.collect()
@@ -411,7 +411,7 @@ process recalibrateSNPs {
   errorStrategy 'retry'
   maxRetries 3
   
-  publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
+  publishDir "${params.outdir}/var/", mode: "copy"
 
   input:
   set file(raw_snp), file(raw_snp_idx) from raw_snps
@@ -456,7 +456,7 @@ process recalibrateIndels {
   errorStrategy 'retry'
   maxRetries 3
 
-  publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
+  publishDir "${params.outdir}/var/", mode: "copy"
 
   input:
   set file(raw_indel), file(raw_indel_idx) from raw_indels
@@ -512,7 +512,7 @@ process recalibrateIndels {
 
 // Step 5.4 Merge Recalibrated
 process mergeVariant {
-  publishDir "${params.outdir}/var/", mode: "copy", overwrite: false
+  publishDir "${params.outdir}/var/", mode: "copy"
 
   input:
   set file(snp), file(snp_idx) from recalibrated_snps
@@ -535,7 +535,7 @@ process mergeVariant {
 
 // Step 5.5 SnpEff
 process snpeff {
-  publishDir "${params.outdir}", mode: "copy", overwrite: false,
+  publishDir "${params.outdir}", mode: "copy",
     saveAs: { fn -> (fn.indexOf("snpEff") > 0) ? "reports/$fn" : "var/$fn" }
 
   input:
