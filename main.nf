@@ -222,7 +222,7 @@ process bwamem {
     -R \"@RG\tID:${name}\tSM:${name}\tPL:illumina\" \
     ${genome} ${reads} | \
     sambamba view -S -f bam /dev/stdin | \
-    sambamba sort -o ${name}.bam /dev/stdin
+    sambamba sort -o ${name}.raw.bam /dev/stdin
   """
 }
 
@@ -257,7 +257,7 @@ process base_recalibration {
   set val(name), file(bam), file(bam_idx) from recal_alignment
 
   output:
-  set val(name), file("*recal.bam"), file("*recal.bam.bai") into align_metrics, align_varcall
+  set val(name), file("*.bam"), file("*.bam.bai") into align_metrics, align_varcall
 
   script:
   """
@@ -275,7 +275,7 @@ process base_recalibration {
     -o ${name}.recal.bam \
     -BQSR ${name}.recal.table \
     -nct ${params.cpus}
-  samtools index ${name}.recal.bam
+  samtools index ${name}.bam
   """
 }
 
