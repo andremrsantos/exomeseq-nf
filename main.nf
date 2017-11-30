@@ -493,7 +493,7 @@ process recalibrateIndels {
       -tranchesFile ${params.project}_indels.tranches \
       -o ${params.project}_indels.recal.vcf \
       -ts_filter_level 95.0 \
-      -mode SNP
+      -mode INDEL
   else
     gatk -T VariantFiltration \
       -R ${genome} \
