@@ -221,7 +221,7 @@ process bwamem {
     -R \"@RG\tID:${name}\tSM:${name}\tPL:illumina\" \
     ${genome} ${reads} | \
     sambamba view -S -f bam /dev/stdin | \
-    sambamba sort -m ${params.memory} -o ${name}.bam /dev/stdin
+    sambamba sort -o ${name}.bam /dev/stdin
   """
 }
 
