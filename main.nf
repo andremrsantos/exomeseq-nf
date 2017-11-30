@@ -524,7 +524,7 @@ process mergeVariant {
   """
   gatk -T CombineVariants \
     -R ${genome} \
-    -o ${params.project}.final.vcf \
+    -o ${params.project}.vcf \
     --variant:snps ${snp} \
     --variant:indels ${indel} \
     -genotypeMergeOptions PRIORITIZE \
