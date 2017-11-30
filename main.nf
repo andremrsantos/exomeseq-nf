@@ -210,8 +210,6 @@ process trimomatic {
 
 // Step 3.1 BWA Align
 process bwamem {
-  publishDir "${params.outdir}/alignment", mode: "copy", overwrite: false
-
   input:
   set val(name), file(reads) from reads_align
 
@@ -230,8 +228,8 @@ process bwamem {
 
 // Step 3.2 Picard Mark Duplicates
 process markdup {
-  publishDir "${params.outdir}", mode: "copy", overwrite: false,
-    saveAs: { fn -> fn.indexOf("metrics") > 0 ? "reports/$fn" : "alignment/$fn" }
+  publishDir "${params.outdir}/reports", mode: "copy", overwrite: false,
+    saveAs: { fn -> fn.indexOf("metrics") > 0 ? fn : "" }
 
   input:
   set val(name), file(bam), file(bam_idx) from markdup_alignment
