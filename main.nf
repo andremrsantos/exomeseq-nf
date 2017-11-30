@@ -537,7 +537,7 @@ process mergeVariant {
 // Step 5.5 SnpEff
 process snpeff {
   publishDir "${params.outdir}", mode: "copy", overwrite: false,
-    saveAs: { fn -> (fn.indexOf("snpEff") > 0) ? "report/$fn" : "var/$fn" }
+    saveAs: { fn -> (fn.indexOf("snpEff") > 0) ? "reports/$fn" : "var/$fn" }
 
   input:
   set file(var), file(var_idx) from variants
