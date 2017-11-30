@@ -60,7 +60,7 @@ def fetchReference(String arg) {
 }
 
 // Pipeline version
-version = "1.0.0"
+version = "1.0.1"
 
 // Show help message
 params.help = false
