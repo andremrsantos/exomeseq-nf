@@ -80,13 +80,16 @@ params.genome = false
 params.target = false
 params.bait = false
 
-required("reads", "genome", "target", "bait")
+required("reads", "genome", "target")
 genome = file(params.genome)
 target = file(params.target)
-bait = file(params.bait)
+bait   = ""
+if (params.bait) {
+  bait = file(params.bait)
+}
 // Exit if not find target
-if (!target.exists() || !bait.exists())
-  exit(1, "Could not find target intervals at `${target}` or bait at `${bait}`.")
+if (!target.exists())
+  exit(1, "Could not find target intervals at `${target}`.")
 
 // Custom trimming options
 params.length = 36
@@ -272,7 +275,7 @@ process base_recalibration {
   gatk -T PrintReads \
     -R ${genome} \
     -I ${bam} \
-    -o ${name}.recal.bam \
+    -o ${name}.bam \
     -BQSR ${name}.recal.table \
     -nct ${params.cpus}
   samtools index ${name}.bam
@@ -291,6 +294,7 @@ process hs_metrics {
   file("*{metrics,pdf}") into hsmetric_results
 
   script:
+  bait
   """
   picard CollectAlignmentSummaryMetrics I=${bam} O=${name}.align_metrics \
     REFERENCE_SEQUENCE=${genome} \
@@ -316,17 +320,19 @@ process hs_metrics {
     CREATE_INDEX=false \
     CREATE_MD5_FILE=false
   
-  picard CollectHsMetrics I=${bam} O=${name}.hs_metrics \
-    BAIT_INTERVALS=${bait} \
-    TARGET_INTERVALS=${target} \
-    METRIC_ACCUMULATION_LEVEL="ALL_READS" \
-    VERBOSITY=INFO \
-    VALIDATION_STRINGENCY=SILENT \
-    QUIET=false \
-    COMPRESSION_LEVEL=5 \
-    MAX_RECORDS_IN_RAM=500000 \
-    CREATE_INDEX=false \
-    CREATE_MD5_FILE=false
+  if [ ${bait} -ne "" ]; then
+    picard CollectHsMetrics I=${bam} O=${name}.hs_metrics \
+      BAIT_INTERVALS=${bait} \
+      TARGET_INTERVALS=${target} \
+      METRIC_ACCUMULATION_LEVEL="ALL_READS" \
+      VERBOSITY=INFO \
+      VALIDATION_STRINGENCY=SILENT \
+      QUIET=false \
+      COMPRESSION_LEVEL=5 \
+      MAX_RECORDS_IN_RAM=500000 \
+      CREATE_INDEX=false \
+      CREATE_MD5_FILE=false
+  fi
   """
 }
 
