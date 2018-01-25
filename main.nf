@@ -243,11 +243,11 @@ process markdup {
   
   script:
   """
-  picard MarkDuplicates \
-    I=${bam} \
-    O=${name}.mkd.bam \
-    M=${name}.markdup_metrics \
-    ASSUME_SORTED=true
+  gatk MarkDuplicates \
+    --INPUT ${bam} \
+    --OUTPUT ${name}.mkd.bam \
+    --METRICS_FILE ${name}.markdup_metrics \
+    --ASSUME_SORTED
   samtools index ${name}.mkd.bam
   """
 }
@@ -264,20 +264,19 @@ process base_recalibration {
 
   script:
   """
-  gatk -T BaseRecalibrator \
-    -R ${genome} \
-    -L ${target} \
-    -I ${bam} \
-    -o ${name}.recal.table \
-    -knownSites ${dbsnp} -knownSites ${mills} \
-    -knownSites ${kgsnp} -knownSites ${kgindel} \
-    -nct ${params.cpus}
-  gatk -T PrintReads \
-    -R ${genome} \
-    -I ${bam} \
-    -o ${name}.bam \
-    -BQSR ${name}.recal.table \
-    -nct ${params.cpus}
+  gatk BaseRecalibrator \
+    --reference ${genome} \
+    --input ${bam} \
+    --output ${name}.recal.table \
+    --known-sites ${dbsnp} \
+    --known-sites ${mills} \
+    --known-sites ${kgsnp} \
+    --known-sites ${kgindel}
+  gatk ApplyBQSR \
+    --reference ${genome} \
+    --input ${bam} \
+    --output ${name}.bam \
+    --bqsr-recal-file ${name}.recal.table
   samtools index ${name}.bam
   """
 }
@@ -296,46 +295,29 @@ process hs_metrics {
   script:
   bait
   """
-  picard CollectAlignmentSummaryMetrics I=${bam} O=${name}.align_metrics \
-    REFERENCE_SEQUENCE=${genome} \
-    ASSUME_SORTED=true \
-    METRIC_ACCUMULATION_LEVEL="ALL_READS"
-    VALIDATION_STRINGENCY=SILENT \
-    QUIET=false \
-    COMPRESSION_LEVEL=5 \
-    MAX_RECORDS_IN_RAM=500000 \
-    CREATE_INDEX=false \
-    CREATE_MD5_FILE=false
+  gatk CollectAlignmentSummaryMetrics \
+    --INPUT ${bam} \
+    --OUTPUT ${name}.align_metrics \
+    --REFERENCE_SEQUENCE ${genome} \
+    --ASSUME_SORTED
   
-  picard CollectInsertSizeMetrics I=${bam} O=${name}.insert_metrics \
-    HISTOGRAM_FILE=${name} \
-    DEVIATIONS=10.0 \
-    MINIMUM_PCT=0.05 \
-    ASSUME_SORTED=true \
-    METRIC_ACCUMULATION_LEVEL="ALL_READS"
-    VALIDATION_STRINGENCY=SILENT \
-    QUIET=false \
-    COMPRESSION_LEVEL=5 \
-    MAX_RECORDS_IN_RAM=500000 \
-    CREATE_INDEX=false \
-    CREATE_MD5_FILE=false
+  gatk CollectInsertSizeMetrics \
+    --INPUT ${bam} \
+    --OUTPUT ${name}.insert_metrics \
+    --Histogram_FILE ${name} \
+    --DEVIATIONS 10.0 \
+    --MINIMUM_PCT 0.05 \
+    --ASSUME_SORTED
   
   if [ ${bait} -ne "" ]; then
-    picard CollectHsMetrics I=${bam} O=${name}.hs_metrics \
-      BAIT_INTERVALS=${bait} \
-      TARGET_INTERVALS=${target} \
-      METRIC_ACCUMULATION_LEVEL="ALL_READS" \
-      VERBOSITY=INFO \
-      VALIDATION_STRINGENCY=SILENT \
-      QUIET=false \
-      COMPRESSION_LEVEL=5 \
-      MAX_RECORDS_IN_RAM=500000 \
-      CREATE_INDEX=false \
-      CREATE_MD5_FILE=false
+    gatk CollectHsMetrics \
+    --INPUT ${bam} \
+    --OUTPUT ${name}.hs_metrics \
+    --BAIT_INTERVALS ${bait} \
+    --TARGET_INTERVALS ${target}
   fi
   """
 }
-
 
 // Step 4.1 Haplotype Caller
 process haplotype_call {
@@ -346,21 +328,17 @@ process haplotype_call {
 
   output:
   file("*.gvcf") into varcall
+  file("*.gvcf.idx") into varcall_index
 
   script:
   """
-  gatk -T HaplotypeCaller \
-    -R ${genome} \
-    -I ${bam} \
-    -L ${target} \
-    -o ${name}.gvcf \
-    --dbsnp ${dbsnp_all} \
-    -variant_index_type LINEAR \
-    -variant_index_parameter 128000 \
-    --emitRefConfidence GVCF \
-    --genotyping_mode DISCOVERY \
-    -stand_call_conf 30 \
-    -nct ${params.cpus}
+  gatk HaplotypeCaller \
+    --reference ${genome} \
+    --intervals ${target} \
+    --input ${bam} \
+    --output ${name}.gvcf \
+    --emit-ref-confidence GVCF \
+    --dbsnp ${dbsnp} 
   """
 }
 
@@ -370,6 +348,7 @@ process genotype_call {
 
   input:
   file (gvcfs) from varcall.collect()
+  file (index) from varcall_index.collect()
 
   output:
   file("*.vcf") into sample_variant
@@ -377,11 +356,11 @@ process genotype_call {
   script:
   vars = gvcfs.collect({ var -> "--variant $var"}).join(" ")
   """
-  gatk -T GenotypeGVCFs \
-    -R ${genome} \
-    -L ${target} \
-    -o ${params.project}.raw.vcf \
-    -D ${dbsnp_all} \
+  gatk GenotypeGVCFs \
+    --reference ${genome} \
+    --intervals ${target} \
+    --dbsnp ${dbsnp} \
+    --output ${params.project}.raw.vcf \
     ${vars}
   """ 
 }
@@ -397,18 +376,18 @@ process selectVariant {
 
   script:
   """
-  gatk -T SelectVariants \
-    -R ${genome} \
+  gatk SelectVariants \
+    --reference ${genome} \
     --variant ${raw_vcf} \
-    --out ${params.project}_snps.vcf \
-    --selectTypeToInclude SNP
-  gatk -T SelectVariants \
-    -R ${genome} \
+    --output ${params.project}_snps.vcf \
+    --select-type-to-include SNP
+  gatk SelectVariants \
+    --reference ${genome} \
     --variant ${raw_vcf} \
-    --out ${params.project}_indels.vcf \
-    --selectTypeToInclude INDEL \
-    --selectTypeToInclude MIXED \
-    --selectTypeToInclude MNP
+    --output ${params.project}_indels.vcf \
+    --select-type-to-include INDEL \
+    --select-type-to-include MIXED \
+    --select-type-to-include MNP
   """
 }
 
@@ -428,32 +407,28 @@ process recalibrateSNPs {
   script:
   inbreed = (sample_count > 10) ? "-an InbreedingCoeff": ""
   """
-  gatk -T VariantRecalibrator \
-    -R ${genome} \
-    -input ${raw_snp} \
-    -resource:hapmap,known=false,training=true,truth=true,prior=15.0 ${hapmap} \
-    -resource:omni,known=false,training=true,truth=true,prior=12.0 ${omni} \
-    -resource:1000G,known=false,training=true,truth=false,prior=10.0 ${kgsnp} \
-    -resource:dbsnp,known=true,training=false,truth=false,prior=5.0 ${dbsnp} \
+  gatk VariantRecalibrator \
+    --reference ${genome} \
+    --variant ${raw_snp} \
+    --resource hapmap,known=false,training=true,truth=true,prior=15.0:${hapmap} \
+    --resource omni,known=false,training=true,truth=false,prior=12.0:${omni} \
+    --resource 1000G,known=false,training=true,truth=false,prior=10.0:${kgsnp} \
+    --resource dbsnp,known=true,training=false,truth=false,prior=2.0:${dbsnp} \
+    -an QD -an MQ -an MQRankSum -an ReadPosRankSum ${inbreed} \
+    -an FS -an SOR \
     -mode SNP \
-    -an QD -an FS -an SOR -an MQ -an MQRankSum \
-    -an ReadPosRankSum ${inbreed} \
-    -allPoly \
-    --maxGaussians 6 \
-    -tranche 100.0 -tranche 99.9 -tranche 99.5 -tranche 99.0 -tranche 95.0 \
-    -recalFile ${params.project}_snps.recal \
-    -tranchesFile ${params.project}_snps.tranches \
-    --num_threads ${params.cpus}
-  
-  gatk -T ApplyRecalibration \
-    -R ${genome} \
-    -L ${target} \
-    -input ${raw_snp} \
-    -recalFile ${params.project}_snps.recal \
-    -tranchesFile ${params.project}_snps.tranches \
-    -o ${params.project}_snps.recal.vcf \
-    -ts_filter_level 99.5 \
-    -mode SNP
+    --output ${params.project}_snps.recal \
+    --tranches-file ${params.project}_snps.tranches \
+    --rscript-file ${params.project}_snps.plots.R \
+    --max-gaussians 6
+  gatk ApplyVQSR \
+    --reference ${genome} \
+    --intervals ${target} \
+    --variant ${raw_snp} \
+    --output ${params.project}_snps.recal.vcf \
+    --recal-file ${params.project}_snps.recal \
+    --tranches-file ${params.project}_snps.tranches \
+    --truth-sensitivity-filter-level  99.0 -mode SNP
   """
 }
 
@@ -472,46 +447,44 @@ process recalibrateIndels {
 
   script:
   inbreed  = (sample_count > 10) ? "-an InbreedingCoeff": ""
-  axiomrsc = (axiom == "") ? "-resource:axiomPoly,known=false,training=true,truth=true,prior=10.0 ${axiom}" : ""
+  axiomrsc = (axiom == "") ? "--resource axiomPoly,known=false,training=true,truth=false,prior=10.0:${axiom}" : ""
   """
   COUNT=\$(cat ${raw_indel} | grep -v '#' | wc -l | awk '{ print \$1 }')
   if [ \$COUNT -gt 10000 ]; then
-    gatk -T VariantRecalibrator \
-      -R ${genome} \
-      -input ${raw_indel} \
-      -resource:mills,known=false,training=true,truth=true,prior=12.0 ${mills} \
-      ${axiomrsc} \
-      -resource:mills,known=false,training=true,truth=true,prior=8.0 ${kgindel} \
-      -resource:dbsnp150,known=true,training=false,truth=false,prior=2.0 ${dbsnp} \
-      -mode INDEL \
-      -an QD -an FS -an SOR -an MQRankSum \
-      -an ReadPosRankSum ${inbreed} \
-      -allPoly \
-      --maxGaussians 4 \
-      -tranche 100.0 -tranche 99.5 -tranche 99.0 -tranche 95.0 -tranche 90.0 \
-      -recalFile ${params.project}_indels.recal \
-      -tranchesFile ${params.project}_indels.tranches \
-      --num_threads ${params.cpus}
-    gatk -T ApplyRecalibration \
-      -R ${genome} \
-      -L ${target} \
-      -input ${raw_indel} \
-      -recalFile ${params.project}_indels.recal \
-      -tranchesFile ${params.project}_indels.tranches \
-      -o ${params.project}_indels.recal.vcf \
-      -ts_filter_level 95.0 \
-      -mode INDEL
-  else
-    gatk -T VariantFiltration \
-      -R ${genome} \
+    gatk VariantRecalibrator \
+      --reference ${genome} \
       --variant ${raw_indel} \
-      --out ${params.project}_indels.flt.vcf \
-      --filterName GATKStandardQD \
-      --filterExpression "QD < 2.0" \
-      --filterName GATKStandardReadPosRankSum \
-      --filterExpression "ReadPosRankSum < -20.0" \
-      --filterName GATKStandardFS \
-      --filterExpression "FS > 200.0"
+      --resource mills,known=false,training=true,truth=true,prior=12.0 ${mills} \
+      ${axiomrsc} \
+      --resource mills,known=false,training=true,truth=false,prior=8.0 ${kgindel} \
+      --resource dbsnp150,known=true,training=false,truth=false,prior=2.0 ${dbsnp} \
+      -an QD -an MQRankSum -an ReadPosRankSum ${inbreed} \
+      -an FS -an SOR \
+      -mode INDEL \
+      -tranche 100.0 -tranche 99.5 -tranche 99.0 -tranche 95.0 -tranche 90.0
+      --output ${params.project}_indels.recal \
+      --tranches-file ${params.project}_indels.tranches \
+      --rscript-file ${params.project}_indels.plots.R \
+      --max-gaussians 4
+    gatk ApplyVQSR \
+      --reference ${genome} \
+      --intervals ${target} \
+      --variant ${raw_indel} \
+      --output ${params.project}_indels.recal.vcf \
+      --recal-file ${params.project}_indels.recal \
+      --tranches-file ${params.project}_indels.tranches \
+      --truth-sensitivity-filter-level  95.0 -mode INDEL
+  else
+    gatk VariantFiltration \
+      --reference ${genome} \
+      --variant ${raw_indel} \
+      --output ${params.project}_indels.flt.vcf \
+      --filter-name "GATKStandardQD" \
+      --filter-expression "QD < 2.0" \
+      --filter-name "GATKStandardReadPosRankSum" \
+      --filter-expression "ReadPosRankSum < -20.0" \
+      --filter-name "GATKStandardFS" \
+      --filter-expression "FS > 200.0"
   fi
   """
 }
@@ -529,13 +502,9 @@ process mergeVariant {
 
   script:
   """
-  gatk -T CombineVariants \
-    -R ${genome} \
-    -o ${params.project}.vcf \
-    --variant:snps ${snp} \
-    --variant:indels ${indel} \
-    -genotypeMergeOptions PRIORITIZE \
-    -priority snps,indels
+  gatk MergeVcfs \
+    --INPUT ${snp} --INPUT ${indel} \
+    --OUTPUT ${params.project}.vcf
   """
 }
 
@@ -556,9 +525,9 @@ process snpeff {
   snpEff ann ${snpeff} \
     -stats ${params.project}.snpEff.html \
     -csvStats ${params.project}.snpEff.csv \
-    -q -canon -lof ${var} | \
-  snpSift varType - | \
-  snpSift annotate ${clinvar} - | \
+    -lof -canon -strict -no-intergenic -noInteraction \
+    ${var} | \
+  snpSift annotate -noId -info CLNDN,CLNHGVS,CLNSIG ${clinvar} - | \
   snpSift dbnsfp -v -db ${dbnsfp} - > ${params.project}.ann.vcf
   """
 }
