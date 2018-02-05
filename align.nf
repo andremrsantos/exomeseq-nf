@@ -1,43 +1,58 @@
 #! /usr/bin/env nextflow run -resume
 
-def helpMessage() {
+// Pipeline version
+version = "1.0.1"
+
+// Show help message
+params.help = false
+// Required params
+params.reads = false
+params.genome = false
+params.target = false
+params.bait = false
+// Trimming options
+params.length = 36
+params.leading = 10
+params.trailing = 10
+params.slidingSize = 5
+params.slidingCutoff = 15
+// GATK recalibration parameters
+params.genomeVersion = "b37"
+params.dbsnp = false
+params.mills = false
+params.kgsnp = false
+params.kgindel = false
+
+// Check and process parameters
+if (params.help) {
     log.info """
     ==========================================
     Exome-Seq: Best Practice v${version}/Align
     ==========================================
     Required options:
-    --reads             Path to input data (must be surrounded with quotes).
-    --genome            Genome reference fasta path
-    --target            Targeted regions interval
-    --bait              Bait regions interval
-
+    --reads         Path to input data (must be surrounded with quotes).
+    --genome        Genome reference fasta path
+    --target        Targeted regions interval
+    --bait          Bait regions interval
     Reference Databases:
-    --genomeVersion     Reference Genome versions. Supports either b37, or hg19. [default: b37] 
-    --dbsnp             dbSNP reference database [default: b37/dbSNP_150.b37.vcf.gz]
-    --mills             Mills indels gold standard [default: b37/Mills_and_1000G_gold_standard.indels.b37.vcf.gz]
-    --kgsnp             1000 Genomes High Confidence SNPS [default: b37/1000G_phase1.snps.high_confidence.b37.vcf.gz]
-    --kgindel           1000 Genomes High Confidence Indels [default: b37/1000G_phase1.indels.b37.vcf.gz]
-    
+    --genomeVersion Reference Genome versions.
+    --dbsnp         dbSNP reference database.
+    --mills         Mills indels gold standard.
+    --kgsnp         1000 Genomes High Confidence SNPS.
+    --kgindel       1000 Genomes High Confidence Indels.
     Trimming options:
-    --length            Minimal read lenght. [default: ${params.length}]
-    --leading           Cut bases off the start of a read whose quality is below. [default: ${params.leading}]
-    --trailing          Cut bases off the end of a read whose quality is below. [default: ${params.trailing}]
-    --slidingSize       In a slidding window cutoff, sets window size. [default: ${params.slidingSize}]
-    --slidingCutoff     In a slidding window cutoff, sets window quality threshold. [default: ${params.slidindCutoff}]
-    
+    --length        Minimal read lenght.
+    --leading       Remove leading bases whose quality is bellow threshold.
+    --trailing      Remove trailing bases whose quality is bellow threshold.
+    --slidingSize   Slidding window size.
+    --slidingCutoff Slidding window quality threshold.
     Other options:
-    --help              Print this help text
-    --project           Name of the running project
-    --cpus              The number of cpus to reserve for multithread jobs
-    --outdir            The output directory where the results will be saved
-    --time              The maximum execution time
+    --help          Print this help text
+    --project       Name of the running project
+    --cpus          The number of cpus to reserve for multithread jobs
+    --outdir        The output directory where the results will be saved
+    --time          The maximum execution time
     """.stripIndent()
-}
-
-def required(String... args) {
-    args.each { arg ->
-        if (!params[arg]) exit(1, "The required parameter --${arg} is missing.")
-    }
 }
 
 def fetchReference(String arg) {
@@ -48,88 +63,53 @@ def fetchReference(String arg) {
     else return false
 }
 
-// Pipeline version
-version = "1.0.1"
-
-// Show help message
-params.help = false
-if (params.help) {
-    helpMessage()
-    exit 0
+if (!params.reads || !params.genome || !params.target) {
+    exit(1, "Missing required parameters: --reads, --genome, or --target")
 }
-
-// Pipeline Parameters
-// Required params
-params.reads = false
-params.genome = false
-params.target = false
-params.bait = false
-
-required("reads", "genome", "target")
 genome = file(params.genome)
 target = file(params.target)
-bait = ""
-if (params.bait) {
-    bait = file(params.bait)
-}
-
-// Custom trimming options
-params.length = 36
-params.leading = 10
-params.trailing = 10
-params.slidingSize = 5
-params.slidingCutoff = 15
-
+bait = (params.bait) ? file(params.bait) : target
 // GATK recalibration parameters
-params.genomeVersion = "b37"
-params.dbsnp = false
 dbsnp = file(fetchReference("dbsnp"))
-params.mills = false
 mills = file(fetchReference("mills"))
-params.kgsnp = false
 kgsnp = file(fetchReference("kgsnp"))
-params.kgindel = false
 kgindel = file(fetchReference("kgindel"))
 
 // Header log info
-log.info "=========================================="
-log.info "Exome-Seq: Best Practice v${version}/Align"
-log.info "=========================================="
-def summary = [:]
-summary['Reads'] = params.reads
-summary['Genome'] = genome
-summary['Target Interval'] = target
-summary['Target Baits'] = bait
-summary['Reference'] = ""
-summary['dbSNP Common'] = dbsnp
-summary['Mills Indels'] = mills
-summary['1000G phase 3 Snps'] = kgsnp
-summary['1000G phase 3 INDEL'] = kgindel
-summary['Trimming'] = ""
-summary['Trim Min Lenght'] = params.length
-summary['Trim Leading'] = params.leading
-summary['Trim Trailing'] = params.trailing
-summary["Trim Sliding Window Size"] = params.slidingSize
-summary["Trim Sliding Window Cutoff"] = params.slidingCutoff
-summary["Global"] = ""
-summary["Project"] = params.project
-summary['Output dir'] = params.outdir
-log.info summary.collect { k,v -> "${k.padRight(30)}: $v" }.join("\n")
-log.info "====================================="
+log.info """
+==========================================
+Exome-Seq: Best Practice v${version}/Align
+==========================================
+Reads:                 ${params.reads}
+Genome:                ${genome}
+Target:                ${target}
+Bait:                  ${bait}
+-- Reference
+dbSNP:                 ${dbsnp}
+Mills Indels:          ${mills}
+1000G.p3 Snps:         ${kgsnp}
+1000G.p3 Indels:       ${kgindel}
+-- Trimming
+Min. Length:           ${params.length}
+Leading:               ${params.leading}
+Trailing:              ${params.trailing}
+Sld. Window size:      ${params.slidingSize}
+Sld. Window threshold: ${params.slidingCutoff}
+-- Global
+Project:               ${params.project}
+Output:                ${params.outdir}
+==========================================
+"""
 
-// Generate reads pairs
+// Generate input channel
 Channel
     .fromFilePairs(params.reads, size: 2)
     .ifEmpty { exit(1, "Cannot find any reads matching: ${params.reads}.\n") }
-    .into { reads_trimming; reads_fastqc; sample_counts }
-
-sample_count = 0
-sample_counts.subscribe { sample_count += 1 }
+    .into { reads_trimming; reads_fastqc }
 
 // Step 1. FastQC
 process fastqc {
-    publishDir "${params.outdir}/reports/fastqc", 
-    mode: "copy",
+    publishDir "${params.outdir}/reports/fastqc", mode: "copy",
     saveAs: { filename ->
         filename.indexOf(".zip") > 0 ? "zips/$filename" : "$filename"
     }
@@ -149,7 +129,9 @@ process fastqc {
 // Step 2. Trimmomatic
 process trimomatic {
     publishDir "${params.outdir}", mode: "copy",
-    saveAs: { filename -> (filename.indexOf("log") > 0)? "reports/$filename" : "seq/$filename"}
+    saveAs: { filename ->
+	(filename.indexOf("log") > 0)? "reports/$filename" : "seq/$filename"
+    }
 
     input:
     set val(name), file(reads) from reads_trimming
@@ -159,16 +141,15 @@ process trimomatic {
     file "*trimmomatic.log" into trimmomatic_results
 
     script:
-    lead = params.leading > 0 ? "LEADING:${params.leading}" : ""
-    trail = params.trailing > 0 ? "TRAILING:${params.trailing}" : ""
+    lead  = (params.leading > 0) ? "LEADING:${params.leading}" : ""
+    trail = (params.trailing > 0) ? "TRAILING:${params.trailing}" : ""
     slide = (params.slidingCutoff > 0 && params.slidingSize > 0) ? "SLIDINGWINDOW:${params.slidingSize}:${params.slidingCutoff}" : ""
-    minlen = params.length > 0 ? "MINLEN:${params.length}" : ""
+    len   = (params.length > 0) ? "MINLEN:${params.length}" : ""
     """
-    trimmomatic PE -threads ${params.cpus} \
-    ${reads} \
-    ${name}_R1.trim.fq.gz ${name}_R1.unpaired.fq.gz \
-    ${name}_R2.trim.fq.gz ${name}_R2.unpaired.fq.gz \
-    $lead $trail $slide $minlen \
+    trimmomatic PE -threads ${params.cpus} ${reads} \
+        ${name}_R1.trim.fq.gz ${name}_R1.unpaired.fq.gz \
+        ${name}_R2.trim.fq.gz ${name}_R2.unpaired.fq.gz \
+        $lead $trail $slide $len \
     2> ${name}.trimmomatic.log
     """
 }
@@ -188,7 +169,7 @@ process bwamem {
     rgid = "@RG\tID:${name}\tSM:${name}\tPL:illumina"
     """
     bwa mem -t ${params.cpus} -R "${rgid}" ${genome} ${reads} | \
-    samblaster 2&> ${name}.samblaster.log | \
+    samblaster 2> ${name}.samblaster.log | \
     sambamba view -S -f bam /dev/stdin | \
     sambamba sort -o ${name}.raw.bam /dev/stdin
     """
@@ -202,7 +183,7 @@ process base_recalibration {
     set val(name), file(bam), file(bam_idx) from recal_alignment
 
     output:
-    set val(name), file("*.bam"), file("*.bam.bai") into align_metrics, align_varcall
+    set val(name), file("*.bam"), file("*.bam.bai") into align_hs, align_ins, align_st, align_varcall
 
     script:
     """
@@ -214,34 +195,48 @@ process base_recalibration {
     --known-sites ${mills} \
     --known-sites ${kgsnp} \
     --known-sites ${kgindel}
+
     gatk ApplyBQSR \
     --reference ${genome} \
     --input ${bam} \
     --output ${name}.bam \
     --bqsr-recal-file ${name}.recal.table
+    samtools index ${name}.bam
     """
 }
 
-
 // Step 3.4 HsMetrics
-process hs_metrics {
+process align_metrics {
     publishDir "${params.outdir}/reports", mode: 'copy'
 
     input:
-    set val(name), file(bam), file(bam_idx) from align_metrics
+    set val(name), file(bam), file(bam_idx) from align_st
 
     output:
-    file("*{metrics,pdf}") into hsmetric_results
+    file("*{metrics,pdf}") into align_metric_results
 
     script:
-    bait
     """
-    gatk CollectAlignmentSummaryMetrics 
+    gatk CollectAlignmentSummaryMetrics \
     --INPUT ${bam} \
     --OUTPUT ${name}.align_metrics \
     --REFERENCE_SEQUENCE ${genome} \
     --ASSUME_SORTED
+    """
+}
 
+// Step 3.4 HsMetrics
+process insert_metrics {
+    publishDir "${params.outdir}/reports", mode: 'copy'
+
+    input:
+    set val(name), file(bam), file(bam_idx) from align_ins
+
+    output:
+    file("*{metrics,pdf}") into insert_metric_results
+
+    script:
+    """
     gatk CollectInsertSizeMetrics \
     --INPUT ${bam} \
     --OUTPUT ${name}.insert_metrics \
@@ -249,7 +244,22 @@ process hs_metrics {
     --DEVIATIONS 10.0 \
     --MINIMUM_PCT 0.05 \
     --ASSUME_SORTED
+    """
+}
 
+// Step 3.4 HsMetrics
+process hs_metrics {
+    publishDir "${params.outdir}/reports", mode: 'copy'
+
+    input:
+    set val(name), file(bam), file(bam_idx) from align_hs
+
+    output:
+    file("*{metrics,pdf}") into hs_metric_results
+
+    script:
+    bait
+    """
     gatk CollectHsMetrics \
     --INPUT ${bam} \
     --OUTPUT ${name}.hs_metrics \
