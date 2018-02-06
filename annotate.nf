@@ -1,7 +1,7 @@
 #! /usr/bin/env nextflow run -resume
 
 // Pipeline version
-version = "1.0.1"
+version = "1.1.0"
 
 // Show help message
 params.help = false
@@ -80,7 +80,7 @@ annotations:      ${annotations}
 clinvar:          ${clinvar}
 1000G.p3:         ${kg}
 EXAc:             ${exac}
-Clinical:         ${clinical}
+Clinical:         ${params.clinical}
 LRG:              ${lrg}
 == Global
 Project:          ${params.project}

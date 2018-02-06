@@ -1,7 +1,7 @@
 #! /usr/bin/env nextflow run -resume
 
 // Pipeline version
-version = "1.0.1"
+version = "1.1.0"
 
 // Show help message
 params.help = false

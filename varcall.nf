@@ -1,7 +1,7 @@
 #! /usr/bin/env nextflow run -resume
 
 // Pipeline version
-version = "1.0.1"
+version = "1.1.0"
 
 // Define script parameters
 params.help = false
@@ -97,9 +97,9 @@ Target:           ${target}
 == Databases
 dbSNP:            ${dbsnp}
 Mills:            ${mills}
-HapMap:           ${hapmap}
 1000G.p3 SNPs:    ${kgsnp}
 1000G.p3 Indels:  ${kgindel}
+HapMap:           ${hapmap}
 1000G Omni:       ${omni}
 Axiom Exome:      ${axiom}
 == Global
