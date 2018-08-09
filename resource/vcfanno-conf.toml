@@ -1,0 +1,67 @@
+[[annotation]]
+file   = "/data/rsc/exac/ExAC.r1.sites.vep.vcf.gz"
+fields = ["AF", "AC_AFR", "AN_AFR", "AC_AMR", "AN_AMR", "AC_EAS", "AN_EAS", 
+          "AC_NFE", "AN_NFE", "AC_SAS", "AN_SAS"]
+ops    = ["self", "self", "self", "self", "self", "self", "self", "self", 
+          "self", "self", "self"]
+names  = ["exac_af", "exac_ac_afr", "exac_an_afr", "exac_ac_amr", "exac_an_amr",
+          "exac_ac_eas", "exac_an_eas", "exac_ac_eur", "exac_an_eur", 
+          "exac_ac_sas", "exac_an_sas"]
+
+[[annotation]]
+file   = "/data/rsc/1kg/ALL.wgs.phase3_shapeit2_mvncall_integrated_v5b.20130502.sites.vcf.gz"
+fields = ["AMR_AF", "EAS_AF", "SAS_AF", "EUR_AF", "AFR_AF", "AF"]
+names  = ["kg_af_amr", "kg_af_eas", "kg_af_sas", "kg_af_eur", "kg_af_afr", "kg_af"]
+ops    = ["self", "self", "self", "self", "self", "self"] 
+
+[[annotation]]
+file = "/data/rsc/gnomad/gnomad.exomes.r2.0.2.sites.vcf.gz"
+fields = ["AF", "AF_AFR", "AF_AMR", "AF_ASJ", "AF_EAS", "AF_NFE", "AF_SAS"]
+names  = ["gnmd_af", "gnmd_af_afr", "gnmd_af_amr", "gnmd_af_asj", "gnmd_af_eas", 
+          "gnmd_af_eur", "gnmd_af_sas"]
+ops    = ["self", "self", "self", "self", "self", "self", "self"]
+
+[[annotation]]
+file = "/data/rsc/clinvar/clinvar_20180603.b37.vcf.gz"
+fields = ["CLNSIG", "CLNDN"]
+ops    = ["self", "self"]
+names  = ["clinvar_pathogenic", "clinvar_disease"]
+
+[[annotation]]
+file = "/data/rsc/dbnsfp/dbNSFP2.9.3.txt.gz"
+columns = [21, 29, 32, 35, 38, 41, 44, 47, 50, 53, 59, 62]
+names = ["ancestral_allele", "pred_sift", "pred_polyphen2_hdiv", "pred_polyphen2_hvar",
+         "pred_lrt", "pred_mutationtaster", "pred_mutationassessor", "pred_fathmm",
+         "pred_metasvm", "pred_metalr", "pred_provean", "pred_mcap"]
+ops = ["self", "self", "self", "self", "self", "self", "self", "self", "self",
+       "self", "self", "self"]
+
+[[postannotation]]
+fields = ["exac_ac_afr", "exac_an_afr"]
+name   = "exac_af_afr"
+op     = "div2"
+type   = "Float"
+
+[[postannotation]]
+fields = ["exac_ac_amr", "exac_an_amr"]
+name   = "exac_af_amr"
+op     = "div2"
+type   = "Float"
+
+[[postannotation]]
+fields = ["exac_ac_eur", "exac_an_eur"]
+name   = "exac_af_eur"
+op     = "div2"
+type   = "Float"
+
+[[postannotation]]
+fields = ["exac_ac_eas", "exac_an_eas"]
+name   = "exac_af_eas"
+op     = "div2"
+type   = "Float"
+
+[[postannotation]]
+fields = ["exac_ac_sas", "exac_an_sas"]
+name   = "exac_af_sas"
+op     = "div2"
+type   = "Float"
