@@ -1,5 +1,13 @@
+title: "Exomeseq Analysis"
+subtitle: "Exomeseq Nextflow pipeline metrics report"
+sp:
+  picard/hsmetrics:
+    fn: .hs_metrics
+  picard/alignment_metrics:
+    fn: .align_metrics
+  picard/insertsize:
+    fn: .insert_metrics
+    shared: true
 extra_fn_clean_exts:
   - _R1
   - _R2
-  - '.mkd'
-  - '.recal'

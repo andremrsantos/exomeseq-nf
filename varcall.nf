@@ -69,13 +69,12 @@ if (!params.genome) {
 if (!params.aligns && !params.gvcfs) {
     exit(1, "You must provide --aligns or --gvcfs to proceed.")
 }
-if (!params.aligns && !params.target) {
+if (params.aligns && !params.target) {
     exit(1, "--target must be provided on --aligns mode.")
 }
 
 // Fetch required parameters
 genome  = file(params.genome)
-target  = file(params.target)
 // Fetch database parameters
 dbsnp   = file(fetchReference("dbsnp"))
 mills   = file(fetchReference("mills"))
@@ -93,7 +92,7 @@ ExomeSeq: Best Practice v${version}/Variant Call
 Alignment:        ${params.aligns}
 GVCFs:            ${params.gvcfs}
 Genome:           ${genome}
-Target:           ${target}
+Target:           ${params.target}
 == Databases
 dbSNP:            ${dbsnp}
 Mills:            ${mills}
@@ -110,26 +109,27 @@ Output:           ${params.outdir}
 
 // Check input mode --aligns or --gvcfs
 if (params.aligns) {
+	target = file(params.target)
     alignment = Channel
-	.fromPath(params.aligns)
-	.ifEmpty({ exit(1, "Could not find any file matching: ${params.align}.\n") })
+		.fromPath(params.aligns)
+		.ifEmpty({ exit(1, "Could not find any file matching: ${params.align}.\n") })
     alignment_index = Channel.fromPath(params.aligns + ".bai")
 
     process haplotype_call {
-	publishDir "${params.outdir}/var/gvcf", mode: "copy"
+		publishDir "${params.outdir}/var/gvcf", mode: "copy"
 
-	input:
-	file(align) from alignment
-	file(index) from alignment_index
+		input:
+		file(align) from alignment
+		file(index) from alignment_index
 
-	output:
-	val name into sample_names
-	file "*.gvcf"  into sample_varcall, project_varcall
-	file "*.gvcf.idx" into sample_varcall_index, project_varcall_index
+		output:
+		val name into sample_names
+		file "*.gvcf"  into sample_varcall, project_varcall
+		file "*.gvcf.idx" into sample_varcall_index, project_varcall_index
 
-        script:
-	name = align.baseName
-        """
+    	script:
+		name = align.baseName
+    	"""
         gatk HaplotypeCaller \
         --reference ${genome} \
         --intervals ${target} \
@@ -172,7 +172,6 @@ process genotype_by_sample {
     """
     gatk GenotypeGVCFs \
     --reference ${genome} \
-    --intervals ${target} \
     --variant ${gvcf} \
     --dbsnp ${dbsnp} \
     --output ${name}.raw.vcf
@@ -203,7 +202,6 @@ process genotype_by_project {
     gatk CombineGVCFs --reference ${genome} --output cohort.gvcf ${vars}
     gatk GenotypeGVCFs \
     --reference ${genome} \
-    --intervals ${target} \
     --variant cohort.gvcf \
     --dbsnp ${dbsnp} \
     --output ${name}.raw.vcf
